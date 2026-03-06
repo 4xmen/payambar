@@ -1776,12 +1776,13 @@ button {
 
     .back-btn {
         font-size: 1.2rem;
-        padding: 0.3rem 0.5rem;
-        margin-left: 0.3rem;
+        font-weight: 500;
+        width: 36px;
+        height: 36px;
     }
 
     .panel-header {
-        padding: 0.9rem 1rem;
+        padding: 0.5rem 1rem;
     }
 
     .mobile-only {
@@ -1806,7 +1807,7 @@ button {
     }
 
     .message-input-area {
-        padding: 0.75rem;
+        padding: 0.5rem 0.65rem;
     }
 
     .input-container {
