@@ -150,38 +150,8 @@ func (db *DB) migrate() error {
 		FOREIGN KEY (user_id) REFERENCES users(id)
 	);
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_user_device_keys_unique ON user_device_keys(user_id, device_id, key_id);
-	`
 
-	_, err := db.conn.Exec(schema)
-	if err != nil {
-		return err
-	}
-
-	// Add display_name and avatar_url columns if they don't exist (migration for existing databases)
-	db.conn.Exec("ALTER TABLE users ADD COLUMN display_name TEXT")
-	db.conn.Exec("ALTER TABLE users ADD COLUMN avatar_url TEXT")
-
-	// E2EE-compatible message columns (safe on existing DBs; duplicate-column errors ignored)
-	db.conn.Exec("ALTER TABLE messages ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0")
-	db.conn.Exec("ALTER TABLE messages ADD COLUMN e2ee_v INTEGER")
-	db.conn.Exec("ALTER TABLE messages ADD COLUMN alg TEXT")
-	db.conn.Exec("ALTER TABLE messages ADD COLUMN sender_device_id TEXT")
-	db.conn.Exec("ALTER TABLE messages ADD COLUMN key_id TEXT")
-	db.conn.Exec("ALTER TABLE messages ADD COLUMN iv TEXT")
-	db.conn.Exec("ALTER TABLE messages ADD COLUMN ciphertext TEXT")
-	db.conn.Exec("ALTER TABLE messages ADD COLUMN aad TEXT")
-
-	// Encrypted private key backup columns
-	db.conn.Exec("ALTER TABLE user_device_keys ADD COLUMN enc_private_key TEXT")
-	db.conn.Exec("ALTER TABLE user_device_keys ADD COLUMN enc_private_key_iv TEXT")
-	db.conn.Exec("ALTER TABLE user_device_keys ADD COLUMN kdf_salt TEXT")
-	db.conn.Exec("ALTER TABLE user_device_keys ADD COLUMN kdf_iterations INTEGER")
-	db.conn.Exec("ALTER TABLE user_device_keys ADD COLUMN kdf_alg TEXT")
-	db.conn.Exec("ALTER TABLE user_device_keys ADD COLUMN key_wrap_version INTEGER")
-	db.conn.Exec("ALTER TABLE user_device_keys ADD COLUMN updated_at TIMESTAMP")
-
-	// Web Push subscriptions table
-	db.conn.Exec(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+	CREATE TABLE IF NOT EXISTS push_subscriptions (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER NOT NULL,
 		endpoint TEXT NOT NULL,
@@ -192,10 +162,17 @@ func (db *DB) migrate() error {
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		revoked_at TIMESTAMP,
 		FOREIGN KEY (user_id) REFERENCES users(id)
-	)`)
-	db.conn.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint_unique ON push_subscriptions(endpoint)")
-	db.conn.Exec("CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id)")
-	db.conn.Exec("CREATE INDEX IF NOT EXISTS idx_push_subscriptions_active ON push_subscriptions(user_id, revoked_at)")
+	);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint_unique ON push_subscriptions(endpoint);
+	CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id);
+	CREATE INDEX IF NOT EXISTS idx_push_subscriptions_active ON push_subscriptions(user_id, revoked_at);
+
+	`
+
+	_, err := db.conn.Exec(schema)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

@@ -4,11 +4,10 @@
 
 - **Backend**: Go 1.23+ with Gin router, gorilla/websocket
 - **Database**: SQLite (single file, no setup)
-- **Frontend**: Vanilla JavaScript (no framework), PWA with service worker
+- **Frontend**: Vuejs, PWA with service worker
 - **Authentication**: JWT tokens with bcrypt password hashing
 - **Real-time**: WebSocket with auto-reconnect
 - **Deployment**: Docker + Docker Compose, single binary with embedded assets
-- **CDN**: Cloudflare (SSL termination, edge caching)
 
 ## Project Layout
 

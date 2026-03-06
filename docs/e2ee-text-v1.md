@@ -209,14 +209,14 @@ On every login or page load the client tries to get a usable ECDH P-256 keypair.
 ┌─────────────────────────────────────────────────┐
 │  1. localStorage                                │
 │     Check for stored private/public JWK,        │
-│     device_id and key_id.                        │
+│     device_id and key_id.                       │
 │     Key: payambar:e2ee:{userId}:*               │
 │     If found → use immediately.                 │
 ├─────────────────────────────────────────────────┤
 │  2. Server backup (requires login password)     │
 │     Fetch GET /keys/devices/self.               │
 │     Find a device with enc_private_key.         │
-│     Decrypt with PBKDF2(password) + AES-GCM.   │
+│     Decrypt with PBKDF2(password) + AES-GCM.    │
 │     If success → use and save to localStorage.  │
 │     If fail → warn user, fall through.          │
 ├─────────────────────────────────────────────────┤

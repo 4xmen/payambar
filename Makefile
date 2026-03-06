@@ -9,8 +9,8 @@ build-frontend:
 	cp frontend/app.js cmd/payambar/static/
 	cp frontend/manifest.json cmd/payambar/static/
 	cp frontend/sw.js cmd/payambar/static/
-	if [ -f frontend/vue.global.prod.js ]; then cp frontend/vue.global.prod.js cmd/payambar/static/; fi
-	if [ -d frontend/fonts ]; then cp -R frontend/fonts cmd/payambar/static/; fi
+	cp frontend/vue.global.prod.js cmd/payambar/static/
+	cp -R frontend/fonts cmd/payambar/static/
 	# PWA icons
 	cp frontend/favicon.svg cmd/payambar/static/
 	cp frontend/favicon-96.png cmd/payambar/static/

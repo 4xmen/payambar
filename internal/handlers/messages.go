@@ -1091,7 +1091,7 @@ func (h *MessageHandler) UploadAvatar(c *gin.Context) {
 		return
 	}
 
-	// Limit file size to 2MB
+	// Limit file size to 500KB
 	if header.Size > 500*1024 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": __("avatar must be smaller than 500KB")})
 		return
