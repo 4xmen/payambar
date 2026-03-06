@@ -1809,7 +1809,7 @@ const app = createApp({
                 clearTimeout(this.newChatSearchTimeout);
                 this.newChatSearchTimeout = null;
             }
-            if (!query) {
+            if (!query || query.length < 3) {
                 this.newChatSearchLoading = false;
                 this.newChatSearchResults = [];
                 return;
