@@ -13,7 +13,7 @@ import (
 
 	"github.com/4xmen/payambar/internal/auth"
 	"github.com/gin-gonic/gin"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 var (
@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 	// Create in-memory SQLite database with shared cache mode
 	// This ensures all connections in the pool share the same database
 	var err error
-	testDB, err = sql.Open("sqlite3", "file::memory:?cache=shared")
+	testDB, err = sql.Open("sqlite", "file::memory:?cache=shared")
 	if err != nil {
 		panic(err)
 	}

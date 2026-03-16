@@ -3,9 +3,10 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type DB struct {
@@ -13,7 +14,7 @@ type DB struct {
 }
 
 func New(path string) (*DB, error) {
-	conn, err := sql.Open("sqlite3", path)
+	conn, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -59,7 +60,7 @@ func New(path string) (*DB, error) {
 	if err := db.migrate(); err != nil {
 		return nil, fmt.Errorf("migration failed: %w", err)
 	}
-
+	log.Println("Ran Migration")
 	return db, nil
 }
 
