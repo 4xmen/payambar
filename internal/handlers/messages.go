@@ -1112,7 +1112,16 @@ func (h *MessageHandler) UploadAvatar(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to save avatar")})
 		return
 	}
-
+	//Delete old avatar file if exists
+	var oldAvatar string
+	err = h.db.QueryRow(`SELECT avatar_url FROM users WHERE id = ?`, userID.(int)).Scan(&oldAvatar)
+	if err == nil {
+		// Delete old avatar file
+		oldAvatarFilePath, exists := localPathFromAvatarURL(oldAvatar, h.uploadDir)
+		if exists {
+			_ = os.Remove(oldAvatarFilePath)
+		}
+	}
 	// Update user's avatar_url
 	avatarURL := "/api/files/" + filename
 	_, err = h.db.Exec(`
