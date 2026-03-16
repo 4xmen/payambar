@@ -88,7 +88,7 @@ func (s *Service) Login(username, password string) (string, error) {
 		if err == sql.ErrNoRows {
 			return "", fmt.Errorf("invalid username or password")
 		}
-		return "", fmt.Errorf("failed to query user: %w", err)
+		return "", fmt.Errorf("Db query error: %v", err)
 	}
 
 	// Verify password

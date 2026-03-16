@@ -73,7 +73,8 @@ body {
     border: 0;
 }
 
-button {
+button,
+input {
     font-family: inherit;
 }
 
@@ -165,9 +166,8 @@ button {
 }
 
 .auth-subtitle {
-    margin-top: 0.2rem;
     color: var(--muted);
-    font-size: 0.95rem;
+    font-size: 0.9rem;
 }
 
 .auth-badge {
@@ -1030,6 +1030,7 @@ button {
     text-align: center;
     color: #6b726f;
     padding: 2rem 1rem;
+    font-weight: 700;
 }
 
 /* Push toggle in profile */

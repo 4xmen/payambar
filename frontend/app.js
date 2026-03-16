@@ -7,7 +7,7 @@ const WS_URL = (typeof window !== 'undefined' && window.WS_URL)
     : (window.location.origin.replace(/^http/, 'ws') + '/ws');
 
 const { createApp } = Vue;
-const NEW_CHAT_SEARCH_DEBOUNCE_MS = 300;
+const NEW_CHAT_SEARCH_DEBOUNCE_MS = 500;
 
 const UserSearchItem = {
     props: {

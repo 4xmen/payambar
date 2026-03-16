@@ -1,7 +1,7 @@
 {
   "name": "PayamBar",
   "short_name": "PayamBar",
-  "description": "A minimal Telegram-like messenger",
+  "description": "A minimal E2EE messenger",
   "start_url": "/",
   "display": "standalone",
   "scope": "/",
