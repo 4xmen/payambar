@@ -150,6 +150,8 @@
             <div class="chat-panel" :class="{'mobile-hide': chatListOpen}">
                 <div class="panel-header">
                     <div class="chat-header-info">
+                        <button class="icon-btn ghost back-btn mobile-only" @click="goBackToList" aria-label="بازگشت"
+                            v-if="currentConversationId">→</button>
                         <span v-if="!currentConversationId" class="select-chat">یک مکالمه را انتخاب کنید</span>
                         <template v-else>
                             <div class="chat-header-avatar-wrapper">
@@ -167,8 +169,6 @@
                         </template>
                     </div>
                     <div class="header-actions">
-                        <button class="icon-btn ghost back-btn mobile-only" @click="goBackToList" aria-label="بازگشت"
-                            v-if="currentConversationId">→</button>
                         <!-- <button class="icon-btn ghost call-btn" v-if="currentConversationId" @click="startCall"
                             aria-label="تماس صوتی">📞</button> -->
                         <!-- <button class="icon-btn ghost" v-show="currentConversationId" @click="shareProfile" aria-label="اشتراک پروفایل">↗</button> -->
@@ -230,11 +230,11 @@
                             </div>
                             <div class="message-footer">
                                 <div class="message-meta">
+                                    <span v-if="shouldShowMessageStatus(msg, msgIndex)" class="message-status">{{
+                                        formatStatus(msg) }}</span>
                                     <span class="message-time">{{ formatTime(msg.created_at) }}</span>
                                     <span class="message-time" style="color:var(--border);">&nbsp;{{
                                         formatDate(msg.created_at) }}</span>
-                                    <span v-if="shouldShowMessageStatus(msg, msgIndex)" class="message-status">{{
-                                        formatStatus(msg) }}</span>
                                 </div>
                                 <button v-if="Number(msg.sender_id) === Number(userId)" class="message-menu-btn"
                                     @click.stop="openContextMenu($event, msg)" aria-label="گزینه‌های پیام">⋯</button>
