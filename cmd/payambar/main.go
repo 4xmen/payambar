@@ -149,6 +149,9 @@ func runCommand(cfg *config.Config, args []string) error {
 	command := args[0]
 
 	switch command {
+	case "version":
+		fmt.Fprintln(os.Stdout, "Payambar version", Version)
+		return nil
 	case "status":
 		return runStatus(cfg, os.Stdout, args[1:])
 	case "-h", "--help", "help":
@@ -165,6 +168,7 @@ func printUsage(out *os.File) {
 	fmt.Fprintln(out, "  payambar           Start the web server")
 	fmt.Fprintln(out, "  payambar status    Show application statistics")
 	fmt.Fprintln(out, "  payambar status --json")
+	fmt.Fprintln(out, "  payambar version   Show application version")
 }
 
 func runServer(cfg *config.Config) error {

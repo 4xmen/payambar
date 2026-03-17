@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type DB struct {
@@ -14,7 +14,7 @@ type DB struct {
 }
 
 func New(path string) (*DB, error) {
-	conn, err := sql.Open("sqlite", path)
+	conn, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

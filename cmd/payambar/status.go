@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/4xmen/payambar/pkg/config"
 )
@@ -104,7 +104,7 @@ func collectStatus(cfg *config.Config) appStatus {
 		return status
 	}
 
-	dbConn, err := sql.Open("sqlite", cfg.DatabasePath)
+	dbConn, err := sql.Open("sqlite3", cfg.DatabasePath)
 	if err != nil {
 		status.DBWarning = fmt.Sprintf("database unavailable: %v", err)
 		return status

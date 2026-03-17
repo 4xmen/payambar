@@ -106,7 +106,7 @@ func (n *Notifier) sendToSubscription(sub Subscription, data []byte) {
 		TTL:             86400,
 	})
 	if err != nil {
-		log.Printf("push: failed to send to %s: %v", sub.Endpoint, err)
+		log.Printf("error: push failed to send: %v", err)
 		return
 	}
 	defer resp.Body.Close()
