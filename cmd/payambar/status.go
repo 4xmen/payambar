@@ -9,9 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
-
 	"github.com/4xmen/payambar/pkg/config"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type appStatus struct {
@@ -40,6 +39,32 @@ type appStatus struct {
 
 type statusOptions struct {
 	JSON bool
+}
+
+func RunCommand(cfg *config.Config, args []string) error {
+	command := args[0]
+
+	switch command {
+	case "version":
+		fmt.Fprintln(os.Stdout, "Payambar version", Version)
+		return nil
+	case "status":
+		return runStatus(cfg, os.Stdout, args[1:])
+	case "-h", "--help", "help":
+		printUsage(os.Stdout)
+		return nil
+	default:
+		printUsage(os.Stderr)
+		return fmt.Errorf("unknown command: %s", command)
+	}
+}
+
+func printUsage(out *os.File) {
+	fmt.Fprintln(out, "Usage:")
+	fmt.Fprintln(out, "  payambar           Start the web server")
+	fmt.Fprintln(out, "  payambar status    Show application statistics")
+	fmt.Fprintln(out, "  payambar status --json")
+	fmt.Fprintln(out, "  payambar version   Show application version")
 }
 
 func parseStatusArgs(args []string) (statusOptions, error) {

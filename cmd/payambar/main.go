@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -10,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +16,7 @@ import (
 	"github.com/4xmen/payambar/internal/auth"
 	"github.com/4xmen/payambar/internal/db"
 	"github.com/4xmen/payambar/internal/handlers"
+	"github.com/4xmen/payambar/internal/middlewares"
 	"github.com/4xmen/payambar/internal/push"
 	"github.com/4xmen/payambar/internal/ws"
 	"github.com/4xmen/payambar/pkg/config"
@@ -31,81 +30,6 @@ var Version = "dev"
 
 //go:embed static/*
 var staticFS embed.FS
-
-func rateLimitMiddleware(limiterInstance *limiter.Limiter) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		limiterContext, err := limiterInstance.Get(c.Request.Context(), c.ClientIP())
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": __("rate limiter error")})
-			c.Abort()
-			return
-		}
-
-		c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", limiterContext.Limit))
-		c.Header("X-RateLimit-Remaining", fmt.Sprintf("%d", limiterContext.Remaining))
-		c.Header("X-RateLimit-Reset", fmt.Sprintf("%d", limiterContext.Reset))
-
-		if limiterContext.Reached {
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": __("rate limit exceeded")})
-			c.Abort()
-			return
-		}
-
-		c.Next()
-	}
-}
-
-type responseBodyWriter struct {
-	gin.ResponseWriter
-	body *bytes.Buffer
-}
-
-func (w responseBodyWriter) Write(b []byte) (int, error) {
-	w.body.Write(b)
-	return w.ResponseWriter.Write(b)
-}
-
-func (w responseBodyWriter) WriteString(s string) (int, error) {
-	w.body.WriteString(s)
-	return w.ResponseWriter.WriteString(s)
-}
-
-func serverErrorLogger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		blw := &responseBodyWriter{body: bytes.NewBuffer(nil), ResponseWriter: c.Writer}
-		c.Writer = blw
-
-		c.Next()
-
-		if c.Writer.Status() >= http.StatusInternalServerError {
-			log.Printf(
-				"HTTP %d %s %s ip=%s duration=%s errors=%q response=%q",
-				c.Writer.Status(),
-				c.Request.Method,
-				c.Request.URL.Path,
-				c.ClientIP(),
-				time.Since(start).Truncate(time.Millisecond),
-				c.Errors.ByType(gin.ErrorTypeAny).String(),
-				strings.TrimSpace(blw.body.String()),
-			)
-		}
-	}
-}
-
-func panicRecovery() gin.HandlerFunc {
-	return gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
-		log.Printf(
-			"panic recovered method=%s path=%s ip=%s error=%v\n%s",
-			c.Request.Method,
-			c.Request.URL.Path,
-			c.ClientIP(),
-			recovered,
-			debug.Stack(),
-		)
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": __("internal server error")})
-	})
-}
 
 func shouldServeSPA(c *gin.Context) bool {
 	if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
@@ -134,7 +58,7 @@ func main() {
 	cfg := config.Load()
 
 	if len(os.Args) > 1 {
-		if err := runCommand(cfg, os.Args[1:]); err != nil {
+		if err := RunCommand(cfg, os.Args[1:]); err != nil {
 			log.Fatalf("%v", err)
 		}
 		return
@@ -143,32 +67,6 @@ func main() {
 	if err := runServer(cfg); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
-}
-
-func runCommand(cfg *config.Config, args []string) error {
-	command := args[0]
-
-	switch command {
-	case "version":
-		fmt.Fprintln(os.Stdout, "Payambar version", Version)
-		return nil
-	case "status":
-		return runStatus(cfg, os.Stdout, args[1:])
-	case "-h", "--help", "help":
-		printUsage(os.Stdout)
-		return nil
-	default:
-		printUsage(os.Stderr)
-		return fmt.Errorf("unknown command: %s", command)
-	}
-}
-
-func printUsage(out *os.File) {
-	fmt.Fprintln(out, "Usage:")
-	fmt.Fprintln(out, "  payambar           Start the web server")
-	fmt.Fprintln(out, "  payambar status    Show application statistics")
-	fmt.Fprintln(out, "  payambar status --json")
-	fmt.Fprintln(out, "  payambar version   Show application version")
 }
 
 func runServer(cfg *config.Config) error {
@@ -210,25 +108,11 @@ func runServer(cfg *config.Config) error {
 	}
 
 	router := gin.New()
-	router.Use(serverErrorLogger())
+	router.Use(middlewares.ServerErrorLogger())
 	router.Use(gin.Logger())
-	router.Use(panicRecovery())
+	router.Use(middlewares.PanicRecovery())
+	router.Use(middlewares.Cors(cfg.CORSOrigins))
 	router.MaxMultipartMemory = cfg.MaxUploadSize
-
-	// CORS middleware
-	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", cfg.CORSOrigins)
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-
-		c.Next()
-	})
 
 	// Public endpoints
 	api := router.Group("/api")
@@ -237,8 +121,8 @@ func runServer(cfg *config.Config) error {
 		registerLimiter := limiter.New(memory.NewStore(), limiter.Rate{Period: time.Minute, Limit: 2})
 
 		// Auth endpoints
-		api.POST("/auth/register", rateLimitMiddleware(registerLimiter), authHandler.Register)
-		api.POST("/auth/login", rateLimitMiddleware(loginLimiter), authHandler.Login)
+		api.POST("/auth/register", middlewares.RateLimitMiddleware(registerLimiter), authHandler.Register)
+		api.POST("/auth/login", middlewares.RateLimitMiddleware(loginLimiter), authHandler.Login)
 
 		// Public profile endpoint
 		api.GET("/users/:username", msgHandler.GetUserProfile)
