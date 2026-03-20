@@ -42,6 +42,10 @@ func New(path string) (*DB, error) {
 		return nil, fmt.Errorf("failed to set synchronous mode: %w", err)
 	}
 
+	if _, err := conn.Exec("PRAGMA foregin_key=on"); err != nil {
+		return nil, fmt.Errorf("failed to set foregin_key: %w", err)
+	}
+
 	// Optional: Set cache size for better performance (negative = KB, positive = pages)
 	// -64000 = 64MB cache
 	if _, err := conn.Exec("PRAGMA cache_size=-64000"); err != nil {
