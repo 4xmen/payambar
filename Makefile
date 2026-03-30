@@ -33,7 +33,7 @@ VERSION ?= dev
 build-backend: build-frontend
 	@echo "Building backend (version: $(VERSION))..."
 	mkdir -p bin
-	go build -ldflags "-X main.Version=$(VERSION)" -o bin/payambar ./cmd/payambar
+	go build -ldflags "-X main.Version=$(VERSION)" -tags=nomsgpack -o bin/payambar ./cmd/payambar
 
 
 # Build all (current OS only)

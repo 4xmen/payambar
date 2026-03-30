@@ -255,6 +255,10 @@
                 <!-- Context Menu -->
                 <div v-if="contextMenu.show" class="context-menu"
                     :style="{top: contextMenu.y + 'px', left: contextMenu.x + 'px'}" @click.stop>
+                    <button class="context-menu-item copy" @click="copyMessage">
+                        <span class="context-menu-icon">📋</span>
+                        <span>کپی</span>
+                    </button>
                     <button class="context-menu-item delete" @click="deleteMessage">
                         <span class="context-menu-icon">🗑️</span>
                         <span>حذف پیام</span>
@@ -271,9 +275,8 @@
                             @click="toggleVoiceRecording" :disabled="uploadingFile || sendingVoice"
                             :aria-label="recordingVoice ? 'توقف ضبط' : 'ضبط صدا'"
                             :title="recordingVoice ? 'توقف ضبط و ارسال' : 'ضبط پیام صوتی'">🎤</button>
-                        <input type="text" v-model="messageText" placeholder="پیام..." aria-label="نوشتن پیام"
-                            @keyup.enter="sendMessage">
-                        <button class="icon-btn solid" @click="sendMessage" aria-label="ارسال">></button>
+                        <textarea rows="1" v-model="messageText" placeholder="پیام..."></textarea>
+                        <button style="direction: ltr;" class="icon-btn solid" @click="sendMessage" aria-label="ارسال" >❮</button>
                     </div>
                     <div v-if="recordingVoice" class="recording-indicator">
                         در حال ضبط صدا: {{ formatRecordingDuration(recordingElapsedSec) }}
@@ -439,6 +442,7 @@
             </div>
         </div>
     </div>
+    <div id="toast"></div>
 
     <script src="/app.js"></script>
     <script>

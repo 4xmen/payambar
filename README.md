@@ -1,23 +1,25 @@
-# Payambar — Minimal Telegram-like Messenger
-A lean 1-to-1 messenger built in Go with embedded frontend, WebSocket real-time chat, and SQLite storage.
+# Payambar — Minimal E2EE Messenger
+A lean E2EE messenger built in Go with embedded frontend, WebSocket real-time chat, and SQLite storage.
 
 ## Highlights
 - Single self-contained binary (frontend embedded)
+- End 2 End Encryption
 - WebSocket messaging
 - SQLite DB
 - File uploads with configurable limit
 - PWA frontend (RTL/Farsi ready)
+- Push Notification for new messages
 
 ## Architecture (quick view)
 - **Backend:** Go (Gin), WebSocket hub, JWT auth
-- **DB:** SQLite file (default `/var/lib/payambar/payambar.db` in production)
-- **Storage:** Local uploads (default `/var/lib/payambar/uploads`)
+- **DB:** SQLite file
+- **Storage:** Local uploads
 - **Frontend:** Vuejs PWA served by the binary
 
 ## Deployment Options
 
 ### 1) Linux installer (systemd, latest GitHub release)
-Requirements: Debian/Ubuntu (systemd), `curl`, `python3`, `tar`, (`unzip` if the release is a zip), `systemd`.
+Requirements: Debian/Ubuntu (systemd), `curl`, `python3`, `tar`, `unzip`, `systemd`.
 Supported release targets: `linux-amd64`, `linux-arm64`.
 
 ```bash
@@ -30,12 +32,10 @@ curl -fsSL https://raw.githubusercontent.com/4xmen/payambar/main/install.sh | su
 
 **`--install`** creates everything from scratch:
 - Fetches the latest release asset from GitHub and installs the `payambar` binary to `/opt/payambar`.
-- Creates system user `payambar`, data dir `/var/lib/payambar` (uploads at `/var/lib/payambar/uploads`), env file `/etc/payambar/payambar.env`.
 - Seeds an empty SQLite DB file, installs a systemd unit, enables the service, and starts/restarts it.
-- Default port: `8080`. Change `PORT` or `JWT_SECRET` in `/etc/payambar/payambar.env` then `sudo systemctl restart payambar`.
+- Default port: `8080`. Change `PORT` or `JWT_SECRET` in `/opt/payambar/.env` then `sudo systemctl restart payambar`.
 
 **`--update`** only replaces the binary and restarts the service:
-- Your `.env` config (`/etc/payambar/payambar.env`) and systemd unit are **preserved** — custom ports, secrets, and service settings are not overwritten.
 
 Common commands:
 ```bash

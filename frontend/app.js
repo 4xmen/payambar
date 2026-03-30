@@ -944,7 +944,7 @@ const app = createApp({
                 });
                 if (!res.ok) throw new Error('Failed to save profile');
                 this.showProfileModal = false;
-                alert('پروفایل ذخیره شد');
+                this.showToast('پروفایل ذخیره شد');
             } catch (err) {
                 console.error('Error saving profile:', err);
                 alert('خطا در ذخیره پروفایل');
@@ -1991,6 +1991,24 @@ const app = createApp({
                 this.closeConversationMenu();
             }
         },
+        copyMessage() {
+            const message = this.contextMenu.message;
+            if (!message || !message.id) {
+                this.closeContextMenu();
+                return;
+            }
+            window.navigator.clipboard.writeText(message);
+            this.showToast("کپی شد");
+            this.closeContextMenu();
+        },
+        showToast(message) {
+            const toast = document.getElementById("toast");
+            toast.textContent = message;
+            toast.classList.add("show");
+
+            setTimeout(() => toast.classList.remove("show"), 1000);
+        },
+
         async deleteMessage() {
             const message = this.contextMenu.message;
             if (!message || !message.id) {

@@ -4,7 +4,7 @@ set -euo pipefail
 SERVICE_NAME="payambar"
 REPO="4xmen/payambar"
 INSTALL_DIR="/opt/${SERVICE_NAME}"
-DATA_DIR="/var/lib/${SERVICE_NAME}"
+DATA_DIR="/opt/${SERVICE_NAME}/data"
 UPLOAD_DIR="${DATA_DIR}/uploads"
 ENV_DIR="/opt/${SERVICE_NAME}"
 ENV_FILE="${ENV_DIR}/.env"

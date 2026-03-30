@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 
 	_ "github.com/joho/godotenv/autoload"
 )
@@ -13,6 +14,7 @@ type Config struct {
 	DatabasePath    string
 	JWTSecret       string
 	CORSOrigins     string
+	TrustedProxies  []string
 	MaxUploadSize   int64
 	FileStoragePath string
 	StunServers     string
@@ -31,6 +33,7 @@ func Load() *Config {
 		DatabasePath:    getEnv("DATABASE_PATH", "./data/payambar.db"),
 		JWTSecret:       getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
 		CORSOrigins:     getEnv("CORS_ORIGINS", "*"),
+		TrustedProxies:  strings.Split(getEnv("TRUSTED_PROXIES", ""), ","),
 		MaxUploadSize:   parseInt64(getEnv("MAX_UPLOAD_SIZE", "10485760")), // 10MB default
 		FileStoragePath: getEnv("FILE_STORAGE_PATH", "./data/uploads"),
 		StunServers:     getEnv("STUN_SERVERS", "stun:stun.l.google.com:19302"),

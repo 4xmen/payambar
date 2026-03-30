@@ -1277,6 +1277,9 @@ input {
     min-width: 60px;
     padding: 0.8rem 1rem;
     border-radius: 16px;
+    unicode-bidi: plaintext;
+    text-align: start;
+    white-space: pre-line;
     word-wrap: break-word;
     word-break: break-word;
     line-height: 1.5;
@@ -1417,17 +1420,20 @@ input {
     padding: 0.35rem 0.35rem 0.35rem 0.75rem;
 }
 
-.input-container input {
+.input-container textarea {
     flex: 1;
     min-width: 0;
     padding: 0.65rem 0.35rem;
     border: none;
     background: transparent;
     font-size: 1rem;
+    unicode-bidi: plaintext;
+    text-align: start;
     color: var(--ink);
+    font-family: Vazirmatn;
 }
 
-.input-container input:focus {
+.input-container textarea:focus {
     outline: none;
 }
 
@@ -2071,4 +2077,23 @@ input {
 
 .btn-hangup:hover {
     background: #dc2626;
+}
+#toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100%);
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  padding: 10px 16px;
+  font-size: 14px;
+  border-radius: 8px;
+  opacity: 0;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  pointer-events: none;
+  z-index: 9999;
+}
+#toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
 }
