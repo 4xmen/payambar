@@ -1997,7 +1997,7 @@ const app = createApp({
                 this.closeContextMenu();
                 return;
             }
-            window.navigator.clipboard.writeText(message);
+            window.navigator.clipboard.writeText(message.content);
             this.showToast("کپی شد");
             this.closeContextMenu();
         },
