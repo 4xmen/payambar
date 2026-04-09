@@ -10,7 +10,7 @@
     <link rel="manifest" href="/manifest.json">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/styles.css?__BUILD_HASH__">
     <script src="/vue.global.prod.js"></script>
     <style>
         [v-cloak] {
@@ -169,8 +169,8 @@
                         </template>
                     </div>
                     <div class="header-actions">
-                        <!-- <button class="icon-btn ghost call-btn" v-if="currentConversationId" @click="startCall"
-                            aria-label="تماس صوتی">📞</button> -->
+                        <button class="icon-btn ghost call-btn" v-if="currentConversationId" @click="startCall"
+                            aria-label="تماس صوتی">📞</button>
                         <!-- <button class="icon-btn ghost" v-show="currentConversationId" @click="shareProfile" aria-label="اشتراک پروفایل">↗</button> -->
                     </div>
                 </div>
@@ -444,7 +444,7 @@
     </div>
     <div id="toast"></div>
 
-    <script src="/app.js"></script>
+    <script src="/app.js?__BUILD_HASH__"></script>
     <script>
         // Register Service Worker for PWA
         if ('serviceWorker' in navigator) {

@@ -171,6 +171,7 @@ func setupTestRouter() *gin.Engine {
 		protected.PUT("/messages/:id/delivered", msgHandler.MarkAsDelivered)
 		protected.PUT("/messages/:id/read", msgHandler.MarkAsRead)
 		protected.DELETE("/profile", msgHandler.DeleteAccount)
+		protected.GET("/webrtc/config", msgHandler.GetWebRTCConfig)
 		protected.POST("/push/subscribe", msgHandler.SubscribePush)
 		protected.DELETE("/push/subscribe", msgHandler.UnsubscribePush)
 	}
@@ -604,6 +605,91 @@ func TestAuthMiddleware(t *testing.T) {
 
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("Invalid token status = %d, want 401", w.Code)
+		}
+	})
+}
+
+func TestGetWebRTCConfig(t *testing.T) {
+	clearTestData()
+
+	userID, _ := testAuthSvc.Register("webrtcuser", "password123")
+	token, _ := testAuthSvc.GenerateToken(userID, "webrtcuser")
+
+	t.Run("returns stun only when turn is empty", func(t *testing.T) {
+		h := NewMessageHandler(testDB, nil, testUploadDir, 10_485_760, "stun:stun1.example.com:3478,stun:stun2.example.com:19302", "", "", "", nil)
+		r := gin.New()
+		a := NewAuthHandler(testAuthSvc)
+		g := r.Group("/api")
+		g.Use(a.AuthMiddleware())
+		g.GET("/webrtc/config", h.GetWebRTCConfig)
+
+		req := httptest.NewRequest("GET", "/api/webrtc/config", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("GetWebRTCConfig() status = %d, want 200", w.Code)
+		}
+
+		var resp struct {
+			IceServers []map[string]interface{} `json:"iceServers"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+
+		if len(resp.IceServers) != 2 {
+			t.Fatalf("expected 2 STUN servers, got %d", len(resp.IceServers))
+		}
+	})
+
+	t.Run("adds udp and tcp turn urls", func(t *testing.T) {
+		h := NewMessageHandler(testDB, nil, testUploadDir, 10_485_760, "stun:stun.example.com:19302", "turn:turn.example.com:3478", "turnuser", "turnpass", nil)
+		r := gin.New()
+		a := NewAuthHandler(testAuthSvc)
+		g := r.Group("/api")
+		g.Use(a.AuthMiddleware())
+		g.GET("/webrtc/config", h.GetWebRTCConfig)
+
+		req := httptest.NewRequest("GET", "/api/webrtc/config", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("GetWebRTCConfig() status = %d, want 200", w.Code)
+		}
+
+		var resp struct {
+			IceServers []map[string]interface{} `json:"iceServers"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+
+		if len(resp.IceServers) != 2 {
+			t.Fatalf("expected STUN + TURN entries, got %d", len(resp.IceServers))
+		}
+
+		urls, ok := resp.IceServers[1]["urls"].([]interface{})
+		if !ok {
+			t.Fatalf("expected turn urls array")
+		}
+		if len(urls) != 2 {
+			t.Fatalf("expected UDP and TCP TURN URLs, got %d", len(urls))
+		}
+		if urls[0] != "turn:turn.example.com:3478" {
+			t.Fatalf("unexpected first TURN URL: %v", urls[0])
+		}
+		if urls[1] != "turn:turn.example.com:3478?transport=tcp" {
+			t.Fatalf("unexpected second TURN URL: %v", urls[1])
+		}
+		if resp.IceServers[1]["username"] != "turnuser" {
+			t.Fatalf("unexpected TURN username: %v", resp.IceServers[1]["username"])
+		}
+		if resp.IceServers[1]["credential"] != "turnpass" {
+			t.Fatalf("unexpected TURN credential: %v", resp.IceServers[1]["credential"])
 		}
 	})
 }

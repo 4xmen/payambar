@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,6 +18,7 @@ import (
 	"github.com/4xmen/payambar/internal/handlers"
 	"github.com/4xmen/payambar/internal/middlewares"
 	"github.com/4xmen/payambar/internal/push"
+	turnserver "github.com/4xmen/payambar/internal/turn"
 	"github.com/4xmen/payambar/internal/ws"
 	"github.com/4xmen/payambar/pkg/config"
 	"github.com/gin-gonic/gin"
@@ -41,6 +43,29 @@ func RunServer(cfg *config.Config) error {
 	// Initialize WebSocket hub
 	hub := ws.NewHub(database.GetConn())
 
+	// Initialize embedded TURN server (optional)
+	var embeddedTURN *turnserver.Server
+	if cfg.TurnEnabled {
+		embeddedTURN, err = turnserver.New(turnserver.Config{
+			ListenAddress: cfg.TurnListenAddress,
+			ListenPort:    cfg.TurnListenPort,
+			RelayAddress:  cfg.TurnRelayAddress,
+			RelayMinPort:  cfg.TurnRelayMinPort,
+			RelayMaxPort:  cfg.TurnRelayMaxPort,
+			Realm:         cfg.TurnRealm,
+			ExternalIP:    cfg.TurnExternalIP,
+			Username:      cfg.TurnUsername,
+			Password:      cfg.TurnPassword,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to initialize embedded TURN server: %w", err)
+		}
+		if err := embeddedTURN.Start(); err != nil {
+			return fmt.Errorf("failed to start embedded TURN server: %w", err)
+		}
+		log.Printf("Embedded TURN server listening on %s:%d (relay range %d-%d)", cfg.TurnListenAddress, cfg.TurnListenPort, cfg.TurnRelayMinPort, cfg.TurnRelayMaxPort)
+	}
+
 	// Initialize push notifier (only if VAPID keys are configured)
 	var pushNotifier *push.Notifier
 	if cfg.VAPIDPublicKey != "" && cfg.VAPIDPrivateKey != "" {
@@ -55,7 +80,26 @@ func RunServer(cfg *config.Config) error {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(authSvc)
-	msgHandler := handlers.NewMessageHandler(database.GetConn(), hub, cfg.FileStoragePath, cfg.MaxUploadSize, cfg.StunServers, cfg.TurnServer, cfg.TurnUsername, cfg.TurnPassword, pushNotifier)
+	turnServerURL := cfg.TurnServer
+	if turnServerURL == "" && cfg.TurnEnabled {
+		advertisedHost := cfg.TurnAdvertisedHost
+		if advertisedHost == "" {
+			advertisedHost = cfg.TurnExternalIP
+		}
+		if advertisedHost == "" {
+			advertisedHost = cfg.TurnListenAddress
+		}
+		if advertisedHost == "0.0.0.0" || advertisedHost == "::" || advertisedHost == "" {
+			if ip := firstLocalIPv4(); ip != "" {
+				advertisedHost = ip
+			}
+		}
+		if advertisedHost != "" {
+			turnServerURL = fmt.Sprintf("turn:%s:%d", advertisedHost, cfg.TurnListenPort)
+		}
+	}
+
+	msgHandler := handlers.NewMessageHandler(database.GetConn(), hub, cfg.FileStoragePath, cfg.MaxUploadSize, cfg.StunServers, turnServerURL, cfg.TurnUsername, cfg.TurnPassword, pushNotifier)
 
 	// Setup router
 	if cfg.Environment == "production" {
@@ -151,6 +195,11 @@ func RunServer(cfg *config.Config) error {
 	go func() {
 		<-sigint
 		log.Println("\nShutting down gracefully...")
+		if embeddedTURN != nil {
+			if err := embeddedTURN.Close(); err != nil {
+				log.Printf("Failed to shutdown embedded TURN server: %v", err)
+			}
+		}
 		os.Exit(0)
 	}()
 
@@ -159,6 +208,40 @@ func RunServer(cfg *config.Config) error {
 	}
 
 	return nil
+}
+
+func firstLocalIPv4() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			if v4 := ip.To4(); v4 != nil {
+				return v4.String()
+			}
+		}
+	}
+
+	return ""
 }
 
 func serveStatics(router *gin.Engine) {

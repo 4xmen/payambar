@@ -7,7 +7,7 @@ services:
     #   context: .
     #   dockerfile: Dockerfile
     container_name: payambar
-    network_mode: "host"  # Required for TURN server - uses host network directly
+    network_mode: "host"  # Recommended for TURN relay UDP port range exposure
     # Note: When using host mode, ports are not mapped - the app listens directly on host ports
     environment:
       PORT: "${PORT:-8080}"
@@ -18,10 +18,16 @@ services:
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
       TURN_ENABLED: "${TURN_ENABLED:-false}"
       TURN_EXTERNAL_IP: "${TURN_EXTERNAL_IP:-}"
+      TURN_ADVERTISED_HOST: "${TURN_ADVERTISED_HOST:-}"
       TURN_REALM: "${TURN_REALM:-}"
+      TURN_LISTEN_ADDRESS: "${TURN_LISTEN_ADDRESS:-0.0.0.0}"
+      TURN_LISTEN_PORT: "${TURN_LISTEN_PORT:-3478}"
+      TURN_RELAY_ADDRESS: "${TURN_RELAY_ADDRESS:-0.0.0.0}"
+      TURN_RELAY_MIN_PORT: "${TURN_RELAY_MIN_PORT:-49152}"
+      TURN_RELAY_MAX_PORT: "${TURN_RELAY_MAX_PORT:-49252}"
       TURN_USERNAME: "${TURN_USERNAME:-}"
       TURN_PASSWORD: "${TURN_PASSWORD:-}"
-      # For WebRTC config API
+      # For WebRTC config API (optional explicit override)
       STUN_SERVERS: "${STUN_SERVERS:-stun:stun.l.google.com:19302}"
       TURN_SERVER: "${TURN_SERVER:-}"
     volumes:

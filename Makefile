@@ -23,7 +23,8 @@ build-frontend:
 	cp frontend/screenshot-1280.png cmd/payambar/static/
 	# Inject build hash into sw.js so browsers detect frontend changes
 	$(eval BUILD_HASH := $(shell cat frontend/index.html frontend/styles.css frontend/app.js frontend/sw.js | shasum -a 256 | cut -c1-12))
-	sed -i.bak "s/__BUILD_HASH__/$(BUILD_HASH)/" cmd/payambar/static/sw.js && rm -f cmd/payambar/static/sw.js.bak
+	# Replace placeholder in copied static files so index.html and sw.js get the real hash
+	sed -i.bak "s/__BUILD_HASH__/$(BUILD_HASH)/g" cmd/payambar/static/index.html cmd/payambar/static/sw.js && rm -f cmd/payambar/static/*.bak
 	@echo "Frontend built in cmd/payambar/static/ (hash: $(BUILD_HASH))"
 
 # Version defaults to 'dev'; override with: make build-backend VERSION=v1.2.0
@@ -48,6 +49,8 @@ run: build-backend
 # Dev (with frontend assets copied)
 dev: build-frontend
 	DATABASE_PATH=./data/payambar.db \
+	TURN_ENABLED=true \
+	STUN_SERVERS= \
 	VAPID_PUBLIC_KEY=BK-m223f6sYwqN2cgyv7e5HSLMlXqEUyPuPUz4LVwlqVsjWQVLe7d_Gi9LVVtzb37yv1pPv9kbqiRFheGlcCOnk \
 	VAPID_PRIVATE_KEY=xDf-gMEdudmVDlRDY5B5u9p6u2Yte_r78_sjm0BOdoY \
 	go run ./cmd/payambar

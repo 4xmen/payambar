@@ -15,7 +15,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -ldflags "-X main.Ve
 # Final stage
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates coturn bash
+RUN apk --no-cache add ca-certificates bash
 
 WORKDIR /root
 
