@@ -109,6 +109,7 @@ const app = createApp({
             newChatSearchError: '',
             newChatSearchTimeout: null,
             showProfileModal: false,
+            activeProfileTab: 'profile',
             profileDisplayName: '',
             myAvatarUrl: null,
             uploadingAvatar: false,
@@ -232,6 +233,7 @@ const app = createApp({
         // Reconnect WebSocket when tab becomes visible again
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible' && this.isAuthed) {
+                this.syncAfterResume();
                 if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
                     this.wsReconnectAttempts = 0;
                     this.serverOffline = false;
@@ -667,6 +669,18 @@ const app = createApp({
             if (msg.status === 'delivered') return '✓';
             return '';
         },
+        getConversationPreview(conv) {
+            if (!conv) return '';
+            const localMessages = this.messages[conv.user_id] || [];
+            const latest = localMessages[localMessages.length - 1];
+            if (latest?.file_name) return latest.file_name;
+            if (latest?.file_url) return 'فایل';
+            if (latest?.content) return latest.content.trim();
+            if (typeof conv.last_message_preview === 'string' && conv.last_message_preview.trim()) {
+                return conv.last_message_preview.trim();
+            }
+            return '';
+        },
         shouldShowMessageStatus(msg, index) {
             if (!msg) return false;
             if (Number(msg.sender_id) !== Number(this.userId)) return false;
@@ -872,6 +886,7 @@ const app = createApp({
             this.currentConversationAvatarUrl = null;
             this.currentConversationIsOnline = false;
             this.showProfileModal = false;
+            this.activeProfileTab = 'profile';
             this.profileDisplayName = '';
             this.myAvatarUrl = null;
             this.deleteAccountConfirm = '';
@@ -1133,11 +1148,40 @@ const app = createApp({
                 const data = await res.json();
                 this.conversations = data.conversations || [];
                 this.sortConversationsInPlace();
+                this.hydrateEncryptedConversationPreviews();
             } catch (err) {
                 console.error(err);
                 this.serverOffline = true;
             } finally {
                 this.loadingConversations = false;
+            }
+        },
+        async syncAfterResume() {
+            await this.loadConversations();
+            if (this.currentConversationId) {
+                await this.refreshCurrentConversation({ keepScroll: true });
+            }
+        },
+        hydrateEncryptedConversationPreviews() {
+            for (const conv of this.conversations) {
+                const preview = (conv.last_message_preview || '').trim();
+                const hasLocalPreview = this.getConversationPreview({ ...conv, last_message_preview: '' });
+                if (hasLocalPreview || preview !== 'پیام رمزنگاری شده') continue;
+                this.refreshConversationPreview(conv.user_id).catch((err) => {
+                    console.warn('Failed to refresh conversation preview:', err);
+                });
+            }
+        },
+        async refreshConversationPreview(userId) {
+            if (!userId || this.messages[userId]?.length) return;
+            const res = await fetch(`${API_URL}/messages?user_id=${userId}&limit=1`, {
+                headers: { Authorization: `Bearer ${this.token}` },
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const latestMessages = await this.decryptMessageList(data.messages || []);
+            if (latestMessages.length) {
+                this.messages[userId] = latestMessages;
             }
         },
         async selectConversation(conv) {
@@ -1209,36 +1253,37 @@ const app = createApp({
             const content = (this.messageText || '').trim();
             if (!content || !this.currentConversationId || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
+            const receiverId = Number(this.currentConversationId);
             const clientMessageId = `client-${Date.now()}`;
             const msg = {
                 id: null,
                 client_message_id: clientMessageId,
                 sender_id: this.userId,
-                receiver_id: this.currentConversationId,
+                receiver_id: receiverId,
                 content,
                 status: 'sent',
                 created_at: new Date().toISOString(),
             };
-            if (!this.messages[this.currentConversationId]) this.messages[this.currentConversationId] = [];
-            this.messages[this.currentConversationId].push(msg);
-            this.updateConversationLastMessage(this.currentConversationId, msg.created_at);
+            if (!this.messages[receiverId]) this.messages[receiverId] = [];
+            this.messages[receiverId].push(msg);
+            this.updateConversationLastMessage(receiverId, msg.created_at);
             this.messageText = '';
             this.chatListOpen = false;
 
             let encryptedPayload = null;
             try {
-                encryptedPayload = await this.encryptTextMessage(this.currentConversationId, content);
+                encryptedPayload = await this.encryptTextMessage(receiverId, content);
             } catch (err) {
                 console.warn('Encryption error, sending plaintext:', err);
             }
-            if (this.e2ee.enabled && !encryptedPayload && !this.e2ee.noKeyWarnedRecipients[this.currentConversationId]) {
+            if (this.e2ee.enabled && !encryptedPayload && !this.e2ee.noKeyWarnedRecipients[receiverId]) {
                 alert('ارسال امن ممکن نیست؛ کلید مخاطب در دسترس نیست. پیام به صورت غیر رمزنگاری‌شده ارسال می‌شود.');
-                this.e2ee.noKeyWarnedRecipients[this.currentConversationId] = true;
+                this.e2ee.noKeyWarnedRecipients[receiverId] = true;
             }
 
             const payload = {
                 type: 'message',
-                receiver_id: this.currentConversationId,
+                receiver_id: receiverId,
                 content: encryptedPayload ? '' : content,
                 client_message_id: clientMessageId,
             };
@@ -1250,10 +1295,11 @@ const app = createApp({
         async sendFileMessage(file) {
             if (!file || !this.currentConversationId) return;
 
+            const receiverId = Number(this.currentConversationId);
             this.uploadingFile = true;
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('receiver_id', this.currentConversationId);
+            formData.append('receiver_id', receiverId);
 
             try {
                 const res = await fetch(`${API_URL}/upload`, {
@@ -1269,14 +1315,14 @@ const app = createApp({
                 // Single source of truth to prevent duplicates:
                 // when WS is connected, wait for WS echo and do not append locally.
                 if (!wsOpen) {
-                    if (!this.messages[this.currentConversationId]) this.messages[this.currentConversationId] = [];
-                    const existingIdx = this.messages[this.currentConversationId]
+                    if (!this.messages[receiverId]) this.messages[receiverId] = [];
+                    const existingIdx = this.messages[receiverId]
                         .findIndex((m) => Number(m.id) === messageID);
                     const createdAt = new Date().toISOString();
                     const msg = {
                         id: messageID,
                         sender_id: this.userId,
-                        receiver_id: this.currentConversationId,
+                        receiver_id: receiverId,
                         content: `📎 ${data.file_name}`,
                         file_name: data.file_name,
                         file_url: data.file_url,
@@ -1285,15 +1331,17 @@ const app = createApp({
                         created_at: createdAt,
                     };
                     if (existingIdx >= 0) {
-                        this.messages[this.currentConversationId][existingIdx] = {
-                            ...this.messages[this.currentConversationId][existingIdx],
+                        this.messages[receiverId][existingIdx] = {
+                            ...this.messages[receiverId][existingIdx],
                             ...msg,
                         };
                     } else {
-                        this.messages[this.currentConversationId].push(msg);
+                        this.messages[receiverId].push(msg);
                     }
-                    this.updateConversationLastMessage(this.currentConversationId, createdAt);
-                    this.$nextTick(() => this.scrollToBottom());
+                    this.updateConversationLastMessage(receiverId, createdAt);
+                    if (Number(this.currentConversationId) === receiverId) {
+                        this.$nextTick(() => this.scrollToBottom());
+                    }
                 }
                 this.loadConversations();
             } catch (err) {
@@ -1417,7 +1465,8 @@ const app = createApp({
         async loadOlderMessages() {
             if (!this.currentConversationId || this.loadingOlderMessages) return;
 
-            const currentMessages = this.messages[this.currentConversationId] || [];
+            const conversationId = Number(this.currentConversationId);
+            const currentMessages = this.messages[conversationId] || [];
             if (currentMessages.length === 0) return;
 
             this.loadingOlderMessages = true;
@@ -1426,7 +1475,7 @@ const app = createApp({
 
             try {
                 const offset = currentMessages.length;
-                const res = await fetch(`${API_URL}/messages?user_id=${this.currentConversationId}&limit=50&offset=${offset}`, {
+                const res = await fetch(`${API_URL}/messages?user_id=${conversationId}&limit=50&offset=${offset}`, {
                     headers: { Authorization: `Bearer ${this.token}` },
                 });
                 if (!res.ok) {
@@ -1442,7 +1491,7 @@ const app = createApp({
 
                 if (olderMessages.length > 0) {
                     // Prepend older messages to existing ones
-                    this.messages[this.currentConversationId] = [...olderMessages, ...currentMessages];
+                    this.messages[conversationId] = [...olderMessages, ...currentMessages];
 
                     // Maintain scroll position after prepending
                     this.$nextTick(() => {
@@ -1454,7 +1503,7 @@ const app = createApp({
                 }
 
                 // If we got less than 50, no more messages
-                this.hasMoreMessages[this.currentConversationId] = olderMessages.length >= 50;
+                this.hasMoreMessages[conversationId] = olderMessages.length >= 50;
             } catch (err) {
                 console.error('Error loading older messages:', err);
             } finally {
@@ -1506,11 +1555,14 @@ const app = createApp({
             this.pullToRefresh.currentY = 0;
             this.updatePullReady();
         },
-        async refreshCurrentConversation() {
+        async refreshCurrentConversation(options = {}) {
             if (!this.currentConversationId) return;
 
+            const conversationId = Number(this.currentConversationId);
+            const container = document.querySelector('.messages-container');
+            const wasNearBottom = this.isNearBottom(container);
             try {
-                const res = await fetch(`${API_URL}/messages?user_id=${this.currentConversationId}&limit=50`, {
+                const res = await fetch(`${API_URL}/messages?user_id=${conversationId}&limit=50`, {
                     headers: { Authorization: `Bearer ${this.token}` },
                 });
                 if (!res.ok) {
@@ -1522,17 +1574,19 @@ const app = createApp({
                 }
 
                 const data = await res.json();
-                this.messages[this.currentConversationId] = await this.decryptMessageList(data.messages || []);
-                this.hasMoreMessages[this.currentConversationId] = (data.messages || []).length >= 50;
+                this.messages[conversationId] = await this.decryptMessageList(data.messages || []);
+                this.hasMoreMessages[conversationId] = (data.messages || []).length >= 50;
 
-                const latestMessage = this.messages[this.currentConversationId].length
-                    ? this.messages[this.currentConversationId][this.messages[this.currentConversationId].length - 1]
+                const latestMessage = this.messages[conversationId].length
+                    ? this.messages[conversationId][this.messages[conversationId].length - 1]
                     : null;
                 if (latestMessage?.created_at) {
-                    this.updateConversationLastMessage(this.currentConversationId, latestMessage.created_at);
+                    this.updateConversationLastMessage(conversationId, latestMessage.created_at);
                 }
 
-                this.$nextTick(() => this.scrollToBottom());
+                if (!options.keepScroll || wasNearBottom) {
+                    this.$nextTick(() => this.scrollToBottom());
+                }
                 this.updatePullReady();
 
                 // Also refresh conversations list
@@ -1671,7 +1725,9 @@ const app = createApp({
             } else if (data.type === 'message') {
                 const normalizedMessage = await this.maybeDecryptMessage(data);
                 const incomingContent = normalizedMessage.content;
-                const convUser = data.sender_id === this.userId ? data.receiver_id : data.sender_id;
+                const senderId = Number(data.sender_id);
+                const receiverId = Number(data.receiver_id);
+                const convUser = senderId === Number(this.userId) ? receiverId : senderId;
                 if (!this.messages[convUser]) this.messages[convUser] = [];
                 const incomingID = Number(data.message_id);
                 const existingByID = this.messages[convUser].findIndex((m) => Number(m.id) === incomingID);
@@ -1756,13 +1812,13 @@ const app = createApp({
                     this.conversations[convIndex].last_message_at = data.created_at || new Date().toISOString();
                 }
 
-                if (this.currentConversationId === convUser) {
+                if (Number(this.currentConversationId) === convUser) {
                     // Mark as delivered/read
                     this.ws?.send(JSON.stringify({ type: 'mark_delivered', message_id: data.message_id }));
                     this.ws?.send(JSON.stringify({ type: 'mark_read', message_id: data.message_id }));
                     // Scroll to bottom for new messages in current conversation
                     this.$nextTick(() => this.scrollToBottom());
-                } else if (data.sender_id !== this.userId) {
+                } else if (senderId !== Number(this.userId)) {
                     // Increment unread count for non-active conversation
                     if (convIndex !== -1) {
                         this.conversations[convIndex].unread_count = (this.conversations[convIndex].unread_count || 0) + 1;
@@ -1876,15 +1932,13 @@ const app = createApp({
         },
         // Context menu methods
         openContextMenu(event, message) {
-            if (Number(message.sender_id) !== Number(this.userId)) return;
-
             const targetRect = event?.currentTarget?.getBoundingClientRect
                 ? event.currentTarget.getBoundingClientRect()
                 : null;
 
             const padding = 12;
             const menuWidth = 160;
-            const menuHeight = 60;
+            const menuHeight = Number(message.sender_id) === Number(this.userId) ? 104 : 56;
 
             let x = targetRect ? targetRect.left : (event.clientX || event.pageX || 0);
             let y = targetRect ? targetRect.bottom : (event.clientY || event.pageY || 0);
@@ -1991,15 +2045,44 @@ const app = createApp({
                 this.closeConversationMenu();
             }
         },
-        copyMessage() {
+        async copyMessage() {
             const message = this.contextMenu.message;
-            if (!message || !message.id) {
+            if (!message || !message.content) {
                 this.closeContextMenu();
                 return;
             }
-            window.navigator.clipboard.writeText(message.content);
-            this.showToast("کپی شد");
+            const text = String(message.content);
+            try {
+                if (window.navigator.clipboard?.writeText) {
+                    await window.navigator.clipboard.writeText(text);
+                } else {
+                    this.copyTextFallback(text);
+                }
+                this.showToast("کپی شد");
+            } catch (err) {
+                try {
+                    this.copyTextFallback(text);
+                    this.showToast("کپی شد");
+                } catch (fallbackErr) {
+                    console.error('Copy failed:', err, fallbackErr);
+                    this.showToast("کپی نشد");
+                }
+            }
             this.closeContextMenu();
+        },
+        copyTextFallback(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.top = '-1000px';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            if (!ok) throw new Error('copy command failed');
         },
         showToast(message) {
             const toast = document.getElementById("toast");

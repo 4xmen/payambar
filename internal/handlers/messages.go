@@ -144,15 +144,16 @@ type DeviceKeyResponse struct {
 	KeyWrapVersion  *int    `json:"key_wrap_version,omitempty"`
 }
 type ConversationPreview struct {
-	ID            int       `json:"id"`
-	UserID        int       `json:"user_id"`
-	Username      string    `json:"username"`
-	DisplayName   *string   `json:"display_name,omitempty"`
-	AvatarURL     *string   `json:"avatar_url,omitempty"`
-	IsOnline      bool      `json:"is_online"`
-	LastMessageAt time.Time `json:"last_message_at"`
-	UnreadCount   int       `json:"unread_count"`
-	Participants  []int     `json:"participants"`
+	ID                 int       `json:"id"`
+	UserID             int       `json:"user_id"`
+	Username           string    `json:"username"`
+	DisplayName        *string   `json:"display_name,omitempty"`
+	AvatarURL          *string   `json:"avatar_url,omitempty"`
+	IsOnline           bool      `json:"is_online"`
+	LastMessageAt      time.Time `json:"last_message_at"`
+	LastMessagePreview string    `json:"last_message_preview,omitempty"`
+	UnreadCount        int       `json:"unread_count"`
+	Participants       []int     `json:"participants"`
 }
 
 // GetConversation retrieves message history between two users
@@ -400,12 +401,23 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 		}
 
 		var lastMessageAt sql.NullString
+		var lastMessageContent, lastFileName sql.NullString
+		var lastEncrypted sql.NullInt64
 		var unreadCount int
 
 		h.db.QueryRow(`
 			SELECT COALESCE(MAX(created_at), '') FROM messages
 			WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
 		`, currentUserID, cd.otherUserID, cd.otherUserID, currentUserID).Scan(&lastMessageAt)
+
+		h.db.QueryRow(`
+			SELECT m.content, m.encrypted, f.file_name
+			FROM messages m
+			LEFT JOIN files f ON f.message_id = m.id
+			WHERE (m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?)
+			ORDER BY m.created_at DESC
+			LIMIT 1
+		`, currentUserID, cd.otherUserID, cd.otherUserID, currentUserID).Scan(&lastMessageContent, &lastEncrypted, &lastFileName)
 
 		h.db.QueryRow(`
 			SELECT COUNT(*) FROM messages
@@ -431,6 +443,13 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 			if parsed, ok := parseSQLiteTimestamp(lastMessageAt.String); ok {
 				conv.LastMessageAt = parsed
 			}
+		}
+		if lastFileName.Valid && strings.TrimSpace(lastFileName.String) != "" {
+			conv.LastMessagePreview = lastFileName.String
+		} else if lastEncrypted.Valid && lastEncrypted.Int64 != 0 {
+			conv.LastMessagePreview = "پیام رمزنگاری شده"
+		} else if lastMessageContent.Valid {
+			conv.LastMessagePreview = strings.TrimSpace(lastMessageContent.String)
 		}
 
 		conversations = append(conversations, conv)
