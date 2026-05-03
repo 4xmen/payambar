@@ -8,10 +8,10 @@ const CACHE_NAME = `payambar-${BUILD_HASH}`;
 const PRECACHE_URLS = [
   '/',
   '/index.html',
-  '/styles.css',
-  '/app.js',
-  '/vue.global.prod.js',
-  '/manifest.json',
+  `/styles.css?${BUILD_HASH}`,
+  `/app.js?${BUILD_HASH}`,
+  `/vue.global.prod.js?${BUILD_HASH}`,
+  `/manifest.json?${BUILD_HASH}`,
   '/fonts/vazirmatn-arabic.woff2',
   '/fonts/vazirmatn-latin.woff2',
 ];
@@ -57,6 +57,26 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+  // Navigations must check the network first so installed PWAs pick up a new
+  // index.html quickly after deployment. Cached HTML is only the offline fallback.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put('/', clone.clone());
+              cache.put('/index.html', clone);
+            });
+          }
+          return response;
+        })
+        .catch(() => caches.match('/index.html').then((cached) => cached || caches.match('/')))
+    );
+    return;
+  }
 
   // ── API calls: network-first, cache fallback ──────────────────────────
   if (url.pathname.startsWith('/api/')) {

@@ -270,7 +270,7 @@ func serveStatics(router *gin.Engine) {
 			c.JSON(404, gin.H{"error": __("not found")})
 			return
 		}
-		c.Header("Cache-Control", "public, max-age=3600")
+		c.Header("Cache-Control", "no-cache")
 		c.Data(http.StatusOK, "application/json", data)
 	})
 
@@ -281,7 +281,8 @@ func serveStatics(router *gin.Engine) {
 			c.JSON(404, gin.H{"error": __("not found")})
 			return
 		}
-		c.Header("Cache-Control", "public, max-age=3600")
+		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+		c.Header("Service-Worker-Allowed", "/")
 		c.Data(http.StatusOK, "application/javascript", data)
 	})
 
@@ -340,7 +341,7 @@ func serveStatics(router *gin.Engine) {
 			c.JSON(404, gin.H{"error": __("not found")})
 			return
 		}
-		c.Header("Cache-Control", "public, max-age=3600")
+		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 	})
 

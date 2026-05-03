@@ -7,11 +7,11 @@
     <meta name="description" content="Payambar - A minimal Telegram-like messenger">
     <meta name="theme-color" content="#ffffff">
     <title>PayamBar</title>
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="/manifest.json?__BUILD_HASH__">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="stylesheet" href="/styles.css?__BUILD_HASH__">
-    <script src="/vue.global.prod.js"></script>
+    <script src="/vue.global.prod.js?__BUILD_HASH__"></script>
     <style>
         [v-cloak] {
             display: none;
@@ -490,7 +490,7 @@
             };
 
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js')
+                navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
                     .then(reg => {
                         console.log('SW registered:', reg.scope);
                         sendSkipWaiting(reg);
