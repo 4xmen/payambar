@@ -1269,6 +1269,10 @@ const app = createApp({
             this.updateConversationLastMessage(receiverId, msg.created_at);
             this.messageText = '';
             this.chatListOpen = false;
+            this.$nextTick(() => {
+                this.resizeMessageInput();
+                this.focusMessageInput();
+            });
 
             let encryptedPayload = null;
             try {
@@ -1290,7 +1294,22 @@ const app = createApp({
             if (encryptedPayload) Object.assign(payload, encryptedPayload);
 
             this.ws.send(JSON.stringify(payload));
-            this.$nextTick(() => this.scrollToBottom());
+            this.$nextTick(() => {
+                this.scrollToBottom();
+                this.focusMessageInput();
+            });
+        },
+        resizeMessageInput() {
+            const input = this.$refs.messageInput;
+            if (!input) return;
+            input.style.height = 'auto';
+            input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+        },
+        focusMessageInput() {
+            const input = this.$refs.messageInput;
+            if (input && typeof input.focus === 'function') {
+                input.focus({ preventScroll: true });
+            }
         },
         async sendFileMessage(file) {
             if (!file || !this.currentConversationId) return;

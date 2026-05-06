@@ -1494,7 +1494,7 @@ input {
 .input-container {
     display: flex;
     gap: 0.35rem;
-    align-items: center;
+    align-items: flex-end;
     background: #f1f4f0;
     border: 1px solid #e1e6de;
     border-radius: 18px;
@@ -1506,14 +1506,18 @@ input {
     min-width: 0;
     min-height: 42px;
     max-height: 120px;
+    height: 42px;
     padding: 0.65rem 0.45rem;
     border: none;
     background: transparent;
     font-size: 1rem;
+    line-height: 1.35;
     unicode-bidi: plaintext;
     text-align: start;
     color: var(--ink);
     font-family: Vazirmatn;
+    resize: none;
+    overflow-y: auto;
 }
 
 .input-container textarea:focus {
