@@ -121,7 +121,14 @@ const app = createApp({
                 x: 0,
                 y: 0,
                 message: null,
+                sheet: false,
             },
+            longPressTimer: null,
+            longPressStartX: 0,
+            longPressStartY: 0,
+            longPressLastX: 0,
+            longPressLastY: 0,
+            pendingLongPressMenu: null,
             conversationMenu: {
                 show: false,
                 x: 0,
@@ -244,6 +251,8 @@ const app = createApp({
     },
     beforeUnmount() {
         this.cleanupVoiceRecorder();
+        this.clearLongPressGesture();
+        this.closeContextMenu();
     },
     methods: {
         async fetchAppVersion() {
@@ -663,6 +672,12 @@ const app = createApp({
             } catch (e) {
                 return '';
             }
+        },
+        formatConversationListTime(value) {
+            if (!value) return '';
+            const relative = this.formatDate(value);
+            if (relative) return relative;
+            return this.formatTime(value);
         },
         formatStatus(msg) {
             if (msg.status === 'read') return '✓✓';
@@ -1949,42 +1964,150 @@ const app = createApp({
                 alert('خطا در ایجاد مکالمه');
             }
         },
-        // Context menu methods
-        openContextMenu(event, message) {
-            const targetRect = event?.currentTarget?.getBoundingClientRect
-                ? event.currentTarget.getBoundingClientRect()
-                : null;
+        clearLongPressTimerOnly() {
+            if (this.longPressTimer) {
+                clearTimeout(this.longPressTimer);
+                this.longPressTimer = null;
+            }
+        },
+        clearLongPressGesture() {
+            this.clearLongPressTimerOnly();
+            this.pendingLongPressMenu = null;
+        },
+        suppressMessageLongPressTarget(el) {
+            if (!el || typeof el.closest !== 'function') return false;
+            return !!(el.closest('video') || el.closest('audio'));
+        },
+        onMessageTouchStart(event, msg) {
+            if (event.touches.length !== 1) return;
+            if (this.suppressMessageLongPressTarget(event.target)) return;
+            const touch = event.touches[0];
+            this.longPressStartX = touch.clientX;
+            this.longPressStartY = touch.clientY;
+            this.longPressLastX = touch.clientX;
+            this.longPressLastY = touch.clientY;
+            this.clearLongPressTimerOnly();
+            this.longPressTimer = setTimeout(() => {
+                this.longPressTimer = null;
+                if (typeof navigator.vibrate === 'function') navigator.vibrate(10);
+                this.pendingLongPressMenu = {
+                    msg,
+                    x: this.longPressLastX,
+                    y: this.longPressLastY,
+                };
+            }, 460);
+        },
+        onMessageTouchMove(event) {
+            const touch = event.touches[0];
+            if (!touch) return;
+            this.longPressLastX = touch.clientX;
+            this.longPressLastY = touch.clientY;
+            const dx = Math.abs(touch.clientX - this.longPressStartX);
+            const dy = Math.abs(touch.clientY - this.longPressStartY);
+            if (this.pendingLongPressMenu) {
+                if (dx > 22 || dy > 22) {
+                    this.pendingLongPressMenu = null;
+                }
+                return;
+            }
+            if (this.longPressTimer && (dx > 12 || dy > 12)) {
+                this.clearLongPressTimerOnly();
+            }
+        },
+        onMessageTouchEnd() {
+            if (this.pendingLongPressMenu) {
+                const p = this.pendingLongPressMenu;
+                this.pendingLongPressMenu = null;
+                this.openMessageActions({ clientX: p.x, clientY: p.y }, p.msg);
+            }
+            this.clearLongPressTimerOnly();
+        },
+        onMessageTouchCancel() {
+            this.clearLongPressGesture();
+        },
+        getMessagePlainText(msg) {
+            if (!msg) return '';
+            const c = msg.content;
+            if (c != null && String(c).trim() !== '') return String(c);
+            if (msg.file_name) return String(msg.file_name);
+            return '';
+        },
+        canCopyMessageText(msg) {
+            return this.getMessagePlainText(msg).length > 0;
+        },
+        canSelectMessageText(msg) {
+            if (!msg) return false;
+            if (!msg.file_url) {
+                return !!(msg.content != null && String(msg.content).trim() !== '');
+            }
+            if (this.isAudioMessage(msg) || this.isVideoMessage(msg)) {
+                return !!(msg.content != null && String(msg.content).trim() !== '');
+            }
+            return true;
+        },
+        openMessageActions(event, message) {
+            if (!message) return;
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            const sheet = vw <= 768;
+
+            let clientX = event && typeof event.clientX === 'number' ? event.clientX : null;
+            let clientY = event && typeof event.clientY === 'number' ? event.clientY : null;
+            if (clientX == null || clientY == null) {
+                clientX = vw / 2;
+                clientY = vh / 2;
+            }
 
             const padding = 12;
-            const menuWidth = 160;
-            const menuHeight = Number(message.sender_id) === Number(this.userId) ? 104 : 56;
+            const menuWidth = Math.min(280, vw - 24);
+            const itemApprox = sheet ? 52 : 48;
+            let itemCount = 0;
+            if (this.canSelectMessageText(message)) itemCount += 1;
+            if (this.canCopyMessageText(message)) itemCount += 1;
+            if (Number(message.sender_id) === Number(this.userId)) itemCount += 1;
+            if (itemCount === 0) return;
+            const menuHeight = itemCount * itemApprox + (sheet ? 36 : 16);
 
-            let x = targetRect ? targetRect.left : (event.clientX || event.pageX || 0);
-            let y = targetRect ? targetRect.bottom : (event.clientY || event.pageY || 0);
+            let x = clientX;
+            let y = clientY;
 
-            const viewportWidth = window.innerWidth;
-            const viewportHeight = window.innerHeight;
-
-            if (x + menuWidth + padding > viewportWidth) {
-                x = viewportWidth - menuWidth - padding;
+            if (!sheet) {
+                if (x + menuWidth + padding > vw) x = vw - menuWidth - padding;
+                if (x < padding) x = padding;
+                if (y + menuHeight + padding > vh) y = vh - menuHeight - padding;
+                if (y < padding) y = padding;
             }
-            if (x < padding) x = padding;
-
-            if (y + menuHeight + padding > viewportHeight) {
-                y = targetRect ? targetRect.top - menuHeight : viewportHeight - menuHeight - padding;
-            }
-            if (y < padding) y = padding;
 
             this.contextMenu = {
                 show: true,
                 x,
                 y,
                 message,
+                sheet,
             };
         },
         closeContextMenu() {
             this.contextMenu.show = false;
             this.contextMenu.message = null;
+            this.contextMenu.sheet = false;
+        },
+        selectMessageText() {
+            const message = this.contextMenu.message;
+            const key = message ? String(message.id ?? message.client_message_id ?? '') : '';
+            this.closeContextMenu();
+            if (!key) return;
+            const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(key) : key.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            this.$nextTick(() => {
+                const row = document.querySelector(`[data-msg-key="${escaped}"]`);
+                if (!row) return;
+                const bubble = row.querySelector('.message-bubble');
+                if (!bubble) return;
+                const sel = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(bubble);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            });
         },
         openConversationMenu(event, conversation) {
             const targetRect = event?.currentTarget?.getBoundingClientRect
@@ -2066,11 +2189,11 @@ const app = createApp({
         },
         async copyMessage() {
             const message = this.contextMenu.message;
-            if (!message || !message.content) {
+            const text = this.getMessagePlainText(message);
+            if (!message || !text) {
                 this.closeContextMenu();
                 return;
             }
-            const text = String(message.content);
             try {
                 if (window.navigator.clipboard?.writeText) {
                     await window.navigator.clipboard.writeText(text);
