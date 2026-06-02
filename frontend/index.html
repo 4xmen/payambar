@@ -282,7 +282,8 @@
                             :aria-label="recordingVoice ? 'توقف ضبط' : 'ضبط صدا'"
                             :title="recordingVoice ? 'توقف ضبط و ارسال' : 'ضبط پیام صوتی'">🎤</button>
                         <textarea ref="messageInput" rows="1" v-model="messageText" placeholder="پیام..."
-                            @input="resizeMessageInput"></textarea>
+                            @input="resizeMessageInput"
+                            @keydown.enter.shift.exact.prevent="sendMessage"></textarea>
                         <button style="direction: ltr;" class="icon-btn solid send-btn" @click="sendMessage"
                             aria-label="ارسال">❮</button>
                     </div>
