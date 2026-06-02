@@ -2066,7 +2066,7 @@ const app = createApp({
         },
         async copyMessage() {
             const message = this.contextMenu.message;
-            if (!message || !message.content) {
+            if (!message || !message.content || message.file_name) {
                 this.closeContextMenu();
                 return;
             }

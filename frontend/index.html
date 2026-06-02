@@ -259,7 +259,8 @@
                 <!-- Context Menu -->
                 <div v-if="contextMenu.show" class="context-menu"
                     :style="{top: contextMenu.y + 'px', left: contextMenu.x + 'px'}" @click.stop>
-                    <button class="context-menu-item copy" @click="copyMessage">
+                    <button v-if="!contextMenu.message?.file_name" class="context-menu-item copy"
+                        @click="copyMessage">
                         <span class="context-menu-icon">📋</span>
                         <span>کپی پیام</span>
                     </button>
