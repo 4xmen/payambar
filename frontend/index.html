@@ -125,7 +125,7 @@
                             <div class="conversation-time">{{ formatTime(conv.last_message_at) }}</div>
                             <div v-if="conv.unread_count > 0" class="unread-badge">{{ conv.unread_count }}</div>
                             <button class="conversation-menu-btn" @click.stop="openConversationMenu($event, conv)"
-                                aria-label="گزینه‌های مکالمه">⋯</button>
+                                aria-label="گزینه‌های مکالمه"><svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
                         </div>
                     </div>
                 </div>
@@ -143,7 +143,7 @@
                 <div v-if="conversationMenu.show" class="context-menu"
                     :style="{top: conversationMenu.y + 'px', left: conversationMenu.x + 'px'}" @click.stop>
                     <button class="context-menu-item delete" @click="deleteConversation(conversationMenu.conversation)">
-                        <span class="context-menu-icon">🗑️</span>
+                        <span class="context-menu-icon"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2m-6 5v6m4-6v6"/></svg></span>
                         <span>حذف مکالمه</span>
                     </button>
                 </div>
@@ -155,7 +155,7 @@
                 <div class="panel-header">
                     <div class="chat-header-info">
                         <button class="icon-btn ghost back-btn mobile-only" @click="goBackToList" aria-label="بازگشت"
-                            v-if="currentConversationId">→</button>
+                            v-if="currentConversationId"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg></button>
                         <span v-if="!currentConversationId" class="select-chat">یک مکالمه را انتخاب کنید</span>
                         <template v-else>
                             <div class="chat-header-avatar-wrapper">
@@ -174,7 +174,7 @@
                     </div>
                     <div class="header-actions">
                         <button class="icon-btn ghost call-btn" v-if="currentConversationId" @click="startCall"
-                            aria-label="تماس صوتی">📞</button>
+                            aria-label="تماس صوتی"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg></button>
                         <!-- <button class="icon-btn ghost" v-show="currentConversationId" @click="shareProfile" aria-label="اشتراک پروفایل">↗</button> -->
                     </div>
                 </div>
@@ -226,7 +226,7 @@
                                     </template>
                                     <template v-else>
                                         <a :href="msg.file_url" target="_blank" class="file-link" download>
-                                            📎 {{ msg.file_name || 'دانلود فایل' }}
+                                            <svg class="icon-svg" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> {{ msg.file_name || 'دانلود فایل' }}
                                         </a>
                                     </template>
                                 </template>
@@ -234,14 +234,16 @@
                             </div>
                             <div class="message-footer">
                                 <div class="message-meta">
-                                    <span v-if="shouldShowMessageStatus(msg, msgIndex)" class="message-status">{{
-                                        formatStatus(msg) }}</span>
+                                    <span v-if="shouldShowMessageStatus(msg, msgIndex)" class="message-status">
+                                        <svg v-if="msg.status === 'read'" class="icon-svg" viewBox="0 0 24 24"><path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/></svg>
+                                        <svg v-else-if="msg.status === 'delivered'" class="icon-svg" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+                                    </span>
                                     <span class="message-time">{{ formatTime(msg.created_at) }}</span>
                                     <span class="message-time" style="color:var(--border);">&nbsp;{{
                                         formatDate(msg.created_at) }}</span>
                                 </div>
                                 <button class="message-menu-btn"
-                                    @click.stop="openContextMenu($event, msg)" aria-label="گزینه‌های پیام">⋯</button>
+                                    @click.stop="openContextMenu($event, msg)" aria-label="گزینه‌های پیام"><svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
                             </div>
                         </div>
                     </div>
@@ -250,7 +252,7 @@
                 <div v-if="currentConversationId" class="pull-to-refresh-indicator"
                     :class="{ visible: pullToRefresh.pulling || pullToRefresh.refreshing, ready: pullToRefresh.currentY >= pullToRefresh.threshold }"
                     :style="(pullToRefresh.pulling || pullToRefresh.refreshing) ? { transform: `translateY(-${pullToRefresh.currentY}px)` } : null">
-                    <div v-if="pullToRefresh.refreshing" class="refresh-spinner">↻</div>
+                    <div v-if="pullToRefresh.refreshing" class="refresh-spinner"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg></div>
                     <div v-else-if="pullToRefresh.currentY >= pullToRefresh.threshold" class="refresh-hint">رها کنید
                     </div>
                     <div v-else class="refresh-hint">برای بروزرسانی به بالا بکشید</div>
@@ -260,12 +262,12 @@
                 <div v-if="contextMenu.show" class="context-menu"
                     :style="{top: contextMenu.y + 'px', left: contextMenu.x + 'px'}" @click.stop>
                     <button class="context-menu-item copy" @click="copyMessage">
-                        <span class="context-menu-icon">📋</span>
+                        <span class="context-menu-icon"><svg class="icon-svg" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span>
                         <span>کپی پیام</span>
                     </button>
                     <button v-if="Number(contextMenu.message?.sender_id) === Number(userId)"
                         class="context-menu-item delete" @click="deleteMessage">
-                        <span class="context-menu-icon">🗑️</span>
+                        <span class="context-menu-icon"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2m-6 5v6m4-6v6"/></svg></span>
                         <span>حذف پیام</span>
                     </button>
                 </div>
@@ -275,15 +277,15 @@
                     <div class="input-container">
                         <input type="file" ref="fileInput" @change="handleFileSelect" style="display: none">
                         <button class="icon-btn ghost" @click="$refs.fileInput.click()"
-                            aria-label="پیوست فایل">📎</button>
+                            aria-label="پیوست فایل"><svg class="icon-svg" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></button>
                         <button class="icon-btn ghost" :class="{ recording: recordingVoice }"
                             @click="toggleVoiceRecording" :disabled="uploadingFile || sendingVoice"
                             :aria-label="recordingVoice ? 'توقف ضبط' : 'ضبط صدا'"
-                            :title="recordingVoice ? 'توقف ضبط و ارسال' : 'ضبط پیام صوتی'">🎤</button>
+                            :title="recordingVoice ? 'توقف ضبط و ارسال' : 'ضبط پیام صوتی'"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/></svg></button>
                         <textarea ref="messageInput" rows="1" v-model="messageText" placeholder="پیام..."
                             @input="resizeMessageInput"></textarea>
                         <button style="direction: ltr;" class="icon-btn solid send-btn" @click="sendMessage"
-                            aria-label="ارسال">❮</button>
+                            aria-label="ارسال"><svg class="icon-svg" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
                     </div>
                     <div v-if="recordingVoice" class="recording-indicator">
                         در حال ضبط صدا: {{ formatRecordingDuration(recordingElapsedSec) }}
@@ -433,10 +435,10 @@
                 </div>
                 <div class="call-actions">
                     <button class="btn-accept" @click="acceptCall">
-                        <span>📞</span> پذیرفتن
+                        <span><svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg></span> پذیرفتن
                     </button>
                     <button class="btn-decline" @click="rejectCall">
-                        <span>✖</span> رد کردن
+                        <span><svg class="icon-svg" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span> رد کردن
                     </button>
                 </div>
             </div>
@@ -456,7 +458,7 @@
                 </div>
                 <div class="call-actions">
                     <button class="btn-decline" @click="endCall">
-                        <span>✖</span> لغو
+                        <span><svg class="icon-svg" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span> لغو
                     </button>
                 </div>
             </div>
