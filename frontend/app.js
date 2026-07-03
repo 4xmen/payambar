@@ -108,7 +108,7 @@ const app = createApp({
             newChatSearchLoading: false,
             newChatSearchError: '',
             newChatSearchTimeout: null,
-            showProfileModal: false,
+            // showProfileModal removed in favor of native dialog
             activeProfileTab: 'profile',
             profileDisplayName: '',
             myAvatarUrl: null,
@@ -246,6 +246,24 @@ const app = createApp({
         this.cleanupVoiceRecorder();
     },
     methods: {
+        openProfileModal() {
+            const dialog = this.$refs.profileModal;
+            if (dialog) {
+                dialog.showModal();
+            }
+        },
+        closeProfileModal() {
+            const dialog = this.$refs.profileModal;
+            if (dialog) {
+                dialog.close();
+            }
+        },
+        handleProfileBackdropClick(e) {
+            const dialog = this.$refs.profileModal;
+            if (dialog && e.target === dialog) {
+                this.closeProfileModal();
+            }
+        },
         async fetchAppVersion() {
             try {
                 const res = await fetch(`${API_URL}/version`);
@@ -885,7 +903,7 @@ const app = createApp({
             this.currentConversationDisplayName = '';
             this.currentConversationAvatarUrl = null;
             this.currentConversationIsOnline = false;
-            this.showProfileModal = false;
+            this.closeProfileModal();
             this.activeProfileTab = 'profile';
             this.profileDisplayName = '';
             this.myAvatarUrl = null;
@@ -958,7 +976,7 @@ const app = createApp({
                     body: JSON.stringify({ display_name: this.profileDisplayName }),
                 });
                 if (!res.ok) throw new Error('Failed to save profile');
-                this.showProfileModal = false;
+                this.closeProfileModal();
                 this.showToast('پروفایل ذخیره شد');
             } catch (err) {
                 console.error('Error saving profile:', err);
@@ -1981,8 +1999,12 @@ const app = createApp({
                 y,
                 message,
             };
+            this.$nextTick(() => {
+                document.getElementById('message-context-menu')?.showPopover();
+            });
         },
         closeContextMenu() {
+            document.getElementById('message-context-menu')?.hidePopover();
             this.contextMenu.show = false;
             this.contextMenu.message = null;
         },
@@ -2017,8 +2039,12 @@ const app = createApp({
                 y,
                 conversation,
             };
+            this.$nextTick(() => {
+                document.getElementById('conversation-menu')?.showPopover();
+            });
         },
         closeConversationMenu() {
+            document.getElementById('conversation-menu')?.hidePopover();
             this.conversationMenu.show = false;
             this.conversationMenu.conversation = null;
         },

@@ -37,16 +37,16 @@
                 </div>
 
                 <form v-if="authTab==='login'" class="auth-form" @submit.prevent="handleLogin">
-                    <input type="text" v-model="login.username" placeholder="نام‌کاربری" required>
-                    <input type="password" v-model="login.password" placeholder="رمز‌عبور" required>
+                    <input type="text" v-model="login.username" placeholder="نام‌کاربری" required autocomplete="username">
+                    <input type="password" v-model="login.password" placeholder="رمز‌عبور" required autocomplete="current-password">
                     <div class="error-message" v-if="authError">{{ authError }}</div>
                     <button type="submit">ورود امن</button>
                 </form>
 
                 <form v-else class="auth-form" @submit.prevent="handleRegister">
-                    <input type="text" v-model="register.username" placeholder="نام‌کاربری" required>
-                    <input type="password" v-model="register.password" placeholder="رمز‌عبور" required>
-                    <input type="password" v-model="register.confirm" placeholder="تکرار رمز‌عبور" required>
+                    <input type="text" v-model="register.username" placeholder="نام‌کاربری" required autocomplete="username">
+                    <input type="password" v-model="register.password" placeholder="رمز‌عبور" required autocomplete="new-password">
+                    <input type="password" v-model="register.confirm" placeholder="تکرار رمز‌عبور" required autocomplete="new-password">
                     <label class="rules-checkbox">
                         <input type="checkbox" v-model="acceptRules" required>
                         <span>قوانین استفاده را می‌پذیرم</span>
@@ -89,11 +89,11 @@
             <div class="chat-list-panel" :class="{'mobile-show': chatListOpen}">
                 <!-- User Profile Section -->
                 <div class="user-profile-section">
-                    <div class="user-avatar" @click="showProfileModal = true" style="cursor: pointer;">
+                    <div class="user-avatar" @click="openProfileModal" style="cursor: pointer;">
                         <img v-if="myAvatarUrl" :src="myAvatarUrl" alt="آواتار" class="avatar-img">
                         <span v-else>{{ username ? username.charAt(0).toUpperCase() : '?' }}</span>
                     </div>
-                    <div class="user-profile-info" @click="showProfileModal = true" style="cursor: pointer;">
+                    <div class="user-profile-info" @click="openProfileModal" style="cursor: pointer;">
                         <div class="user-profile-name">{{ profileDisplayName || (username) }}</div>
                         <div class="user-profile-status">{{ userProfileStatusText }}</div>
                     </div>
@@ -140,14 +140,13 @@
                 </button>
 
                 <!-- Conversation Menu -->
-                <div v-if="conversationMenu.show" class="context-menu"
-                    :style="{top: conversationMenu.y + 'px', left: conversationMenu.x + 'px'}" @click.stop>
+                <div id="conversation-menu" popover="auto" class="context-menu"
+                    :style="{top: conversationMenu.y + 'px', left: conversationMenu.x + 'px'}">
                     <button class="context-menu-item delete" @click="deleteConversation(conversationMenu.conversation)">
                         <span class="context-menu-icon"><svg class="icon-svg" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2m-6 5v6m4-6v6"/></svg></span>
                         <span>حذف مکالمه</span>
                     </button>
                 </div>
-                <div v-if="conversationMenu.show" class="context-menu-overlay" @click="closeConversationMenu"></div>
             </div>
 
             <!-- Chat Panel -->
@@ -259,8 +258,8 @@
                 </div>
 
                 <!-- Context Menu -->
-                <div v-if="contextMenu.show" class="context-menu"
-                    :style="{top: contextMenu.y + 'px', left: contextMenu.x + 'px'}" @click.stop>
+                <div id="message-context-menu" popover="auto" class="context-menu"
+                    :style="{top: contextMenu.y + 'px', left: contextMenu.x + 'px'}">
                     <button class="context-menu-item copy" @click="copyMessage">
                         <span class="context-menu-icon"><svg class="icon-svg" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></span>
                         <span>کپی پیام</span>
@@ -271,7 +270,6 @@
                         <span>حذف پیام</span>
                     </button>
                 </div>
-                <div v-if="contextMenu.show" class="context-menu-overlay" @click="closeContextMenu"></div>
 
                 <div class="message-input-area" v-show="currentConversationId">
                     <div class="input-container">
@@ -319,11 +317,15 @@
             </div>
 
             <!-- Profile Modal -->
-            <div class="modal" v-if="showProfileModal" @click.self="showProfileModal = false">
-                <div class="modal-content profile-modal-sheet">
+            <dialog id="profile-modal" ref="profileModal" class="modal" @click="handleProfileBackdropClick">
+                <div class="modal-content profile-modal-sheet" tabindex="-1" autofocus style="outline: none;">
                     <div class="modal-header">
                         <h3>پروفایل</h3>
-                        <button class="close-btn" @click="showProfileModal = false">×</button>
+                        <form method="dialog">
+                            <button class="close-btn" @click="closeProfileModal">
+                                <svg class="icon-svg" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                            </button>
+                        </form>
                     </div>
                     <div class="profile-tabs" role="tablist" aria-label="تنظیمات">
                         <button :class="{active: activeProfileTab === 'profile'}" @click="activeProfileTab = 'profile'">پروفایل</button>
@@ -362,7 +364,7 @@
                                 </div>
                                 <div class="profile-form-group">
                                     <label>نام نمایشی</label>
-                                    <input type="text" v-model="profileDisplayName"
+                                    <input type="text" v-model="profileDisplayName" autocomplete="name"
                                         placeholder="نام نمایشی خود را وارد کنید">
                                 </div>
                             </div>
@@ -419,7 +421,7 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </dialog>
         </div>
 
         <!-- Incoming Call Modal -->
