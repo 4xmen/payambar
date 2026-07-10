@@ -434,7 +434,7 @@ input {
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: var(--bg);
+    background: #fbfcfb;
     border-radius: var(--radius) var(--radius) 0 0;
 }
 
@@ -618,7 +618,7 @@ input {
 }
 
 .logout-btn:hover {
-    background: var(--surface-muted);
+    background: #eaf5f1;
     border-color: rgba(0, 0, 0, 0.4);
 }
 
@@ -924,17 +924,17 @@ input {
 }
 
 .btn-primary:hover {
-    background: #2a2a29;
+    background: #0c5b42;
 }
 
 .btn-secondary {
     background: var(--surface);
     color: var(--ink);
-    border: 1px solid var(--border);
+    border: 1px solid #e1e6de;
 }
 
 .btn-secondary:hover {
-    background: var(--surface-muted);
+    background: #eef5f0;
     border-color: rgba(0, 0, 0, 0.25);
     color: var(--auth-accent);
 }
@@ -969,7 +969,7 @@ input {
 .conversation-item {
     min-height: 72px;
     padding: 0.75rem 0.9rem;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid rgba(225, 229, 227, 0.75);
     cursor: pointer;
     transition: background 0.15s ease, border-color 0.15s ease;
     display: flex;
@@ -1020,11 +1020,11 @@ input {
 }
 
 .conversation-item:hover {
-    background: var(--surface-muted);
+    background: #f4f7f4;
 }
 
 .conversation-item.active {
-    background: var(--secondary);
+    background: #eef7f3;
     box-shadow: inset -3px 0 0 var(--auth-accent);
 }
 
@@ -1058,7 +1058,7 @@ input {
 }
 
 .conversation-menu-btn:hover {
-    background: var(--surface-muted);
+    background: #eef5f0;
     color: var(--auth-accent);
 }
 
@@ -1103,7 +1103,7 @@ input {
 
 .empty-state {
     text-align: center;
-    color: var(--muted);
+    color: #6b726f;
     padding: 2rem 1rem;
     font-weight: 700;
 }
@@ -1283,7 +1283,7 @@ input {
     flex-direction: column;
     gap: 0.75rem;
     background:
-        linear-gradient(180deg, var(--bg) 0%, var(--surface) 18%, var(--surface) 100%);
+        linear-gradient(180deg, #f7faf8 0%, #fbfcfb 18%, #fbfcfb 100%);
     position: relative;
 }
 
@@ -1496,8 +1496,8 @@ input {
     display: flex;
     gap: 0.35rem;
     align-items: flex-end;
-    background: var(--surface-muted);
-    border: 1px solid var(--border);
+    background: #f1f4f0;
+    border: 1px solid #e1e6de;
     border-radius: 18px;
     padding: 0.3rem 0.35rem;
 }
@@ -1658,7 +1658,7 @@ dialog.modal[open]::backdrop {
     border: 1px solid var(--border);
     box-shadow: var(--shadow-soft);
     overflow: hidden;
-    background: linear-gradient(180deg, var(--bg) 0%, var(--surface) 20%, var(--surface) 100%);
+    background: linear-gradient(180deg, #f9faf8 0%, #ffffff 20%, #ffffff 100%);
 }
 
 dialog.modal[open] .modal-content,
@@ -1698,7 +1698,7 @@ dialog.modal:focus {
 
 .close-btn {
     background: transparent;
-    border: 1px solid var(--border);
+    border: 1px solid #e1e6de;
     font-size: 1.5rem;
     cursor: pointer;
     color: var(--muted);
@@ -1889,7 +1889,7 @@ dialog.modal:focus {
         border-radius: 0;
         height: 100%;
         min-height: 0;
-        background: var(--bg);
+        background: #fbfcfb;
     }
 
     .chat-list-panel {
@@ -2113,7 +2113,7 @@ dialog.modal:focus {
 
 /* Call Styles */
 .call-btn {
-    color: var(--ink) !important;
+    color: #22c55e !important;
 }
 
 .incoming-call-modal {
