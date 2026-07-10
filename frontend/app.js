@@ -1323,6 +1323,11 @@ const app = createApp({
             input.style.height = 'auto';
             input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
         },
+        handleMessageKeydown(event) {
+            if (event.key !== 'Enter' || !event.shiftKey || event.isComposing) return;
+            event.preventDefault();
+            this.sendMessage();
+        },
         focusMessageInput() {
             const input = this.$refs.messageInput;
             if (input && typeof input.focus === 'function') {
