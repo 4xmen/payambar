@@ -329,6 +329,18 @@ func serveStatics(router *gin.Engine) {
 		c.Data(http.StatusOK, "font/woff2", data)
 	})
 
+	// Serve frontend lib helpers (e2ee.js, funcs.js)
+	router.GET("/lib/*filepath", func(c *gin.Context) {
+		file := strings.TrimPrefix(c.Param("filepath"), "/")
+		data, err := fs.ReadFile(staticFS, path.Join("static/lib", file))
+		if err != nil {
+			c.JSON(404, gin.H{"error": __("not found")})
+			return
+		}
+		c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		c.Data(http.StatusOK, "application/javascript; charset=utf-8", data)
+	})
+
 	// Serve index.html for all other routes (SPA)
 	router.NoRoute(func(c *gin.Context) {
 		if !shouldServeSPA(c) {

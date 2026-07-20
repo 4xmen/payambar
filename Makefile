@@ -11,6 +11,7 @@ build-frontend:
 	cp frontend/sw.js cmd/payambar/static/
 	cp frontend/vue.global.prod.js cmd/payambar/static/
 	cp -R frontend/fonts cmd/payambar/static/
+	cp -R frontend/lib cmd/payambar/static/
 	# PWA icons
 	cp frontend/favicon.svg cmd/payambar/static/
 	cp frontend/favicon-96.png cmd/payambar/static/
@@ -22,7 +23,7 @@ build-frontend:
 	cp frontend/screenshot-540.png cmd/payambar/static/
 	cp frontend/screenshot-1280.png cmd/payambar/static/
 	# Inject build hash into sw.js so browsers detect frontend changes
-	$(eval BUILD_HASH := $(shell cat frontend/index.html frontend/styles.css frontend/app.js frontend/sw.js | shasum -a 256 | cut -c1-12))
+	$(eval BUILD_HASH := $(shell cat frontend/index.html frontend/styles.css frontend/app.js frontend/sw.js frontend/lib/*.js | shasum -a 256 | cut -c1-12))
 	# Replace placeholder in copied static files so index.html and sw.js get the real hash
 	sed -i.bak "s/__BUILD_HASH__/$(BUILD_HASH)/g" cmd/payambar/static/index.html cmd/payambar/static/sw.js && rm -f cmd/payambar/static/*.bak
 	@echo "Frontend built in cmd/payambar/static/ (hash: $(BUILD_HASH))"
@@ -75,10 +76,12 @@ docker-run:
 
 # Run all tests
 test:
-	@echo "Running tests..."
+	@echo "Running Go tests..."
 	go test -v -race -coverprofile=coverage.out ./...
 	@echo "Coverage report:"
 	go tool cover -func=coverage.out
+	@echo "Running frontend tests..."
+	cd frontend && npm test
 
 
 # Format code

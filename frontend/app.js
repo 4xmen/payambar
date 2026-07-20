@@ -188,12 +188,9 @@ const app = createApp({
             return 'در حال اتصال...';
         },
         filteredConversations() {
-            const convs = this.getSortedConversations();
-            const q = this.searchQuery.trim().toLowerCase();
-            if (!q) return convs;
-            return convs.filter((c) =>
-                c.username?.toLowerCase().includes(q) ||
-                c.display_name?.toLowerCase().includes(q)
+            return PayambarFuncs.filterConversations(
+                this.getSortedConversations(),
+                this.searchQuery
             );
         },
         messagesForCurrent() {
@@ -284,10 +281,7 @@ const app = createApp({
             console.log('initAuth - localStorage:', { storedToken, storedUserId, storedUsername });
 
             // Validate stored auth data
-            const isTokenValid = storedToken && storedToken !== 'undefined' && storedToken !== 'null';
-            const isUserIdValid = storedUserId && !isNaN(parseInt(storedUserId)) && parseInt(storedUserId) > 0;
-
-            if (isTokenValid && isUserIdValid && storedUsername) {
+            if (PayambarFuncs.isValidAuth(storedToken, storedUserId, storedUsername)) {
                 this.token = storedToken;
                 this.userId = parseInt(storedUserId);
                 this.username = storedUsername;
@@ -301,24 +295,16 @@ const app = createApp({
         },
 
         utf8ToBase64Url(value) {
-            const bytes = new TextEncoder().encode(value);
-            return this.bytesToBase64Url(bytes);
+            return PayambarE2EE.utf8ToBase64Url(value);
         },
         base64UrlToUtf8(value) {
-            const bytes = this.base64UrlToBytes(value);
-            return new TextDecoder().decode(bytes);
+            return PayambarE2EE.base64UrlToUtf8(value);
         },
         bytesToBase64Url(bytes) {
-            let binary = '';
-            bytes.forEach((b) => { binary += String.fromCharCode(b); });
-            return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+            return PayambarE2EE.bytesToBase64Url(bytes);
         },
         base64UrlToBytes(value) {
-            const base64 = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4);
-            const binary = atob(base64);
-            const out = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
-            return out;
+            return PayambarE2EE.base64UrlToBytes(value);
         },
         async ensureE2EEReady() {
             if (!this.e2ee.enabled || !window.crypto?.subtle || !this.token || !this.userId) return false;
@@ -446,55 +432,15 @@ const app = createApp({
         },
 
         async encryptPrivateKeyForBackup(privateJwk, password) {
-            const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
-            const ivBytes = window.crypto.getRandomValues(new Uint8Array(12));
-            const derivedKey = await this.derivePasswordKey(password, saltBytes, 150000);
-            const encoded = new TextEncoder().encode(JSON.stringify(privateJwk));
-            const encrypted = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv: ivBytes }, derivedKey, encoded);
-            return {
-                enc_private_key: this.bytesToBase64Url(new Uint8Array(encrypted)),
-                enc_private_key_iv: this.bytesToBase64Url(ivBytes),
-                kdf_salt: this.bytesToBase64Url(saltBytes),
-                kdf_iterations: 150000,
-                kdf_alg: 'PBKDF2-SHA256',
-                key_wrap_version: 1,
-            };
+            return PayambarE2EE.encryptPrivateKeyForBackup(privateJwk, password);
         },
 
         async decryptPrivateKeyBackup(device, password) {
-            if (!device?.enc_private_key || !device?.enc_private_key_iv || !device?.kdf_salt || !device?.kdf_iterations) {
-                throw new Error('missing backup fields');
-            }
-            const saltBytes = this.base64UrlToBytes(device.kdf_salt);
-            const ivBytes = this.base64UrlToBytes(device.enc_private_key_iv);
-            const derivedKey = await this.derivePasswordKey(password, saltBytes, device.kdf_iterations);
-            const decrypted = await window.crypto.subtle.decrypt(
-                { name: 'AES-GCM', iv: ivBytes },
-                derivedKey,
-                this.base64UrlToBytes(device.enc_private_key)
-            );
-            const privateJwk = JSON.parse(new TextDecoder().decode(decrypted));
-            return {
-                privateJwk,
-                publicJwk: JSON.parse(this.base64UrlToUtf8(device.public_key)),
-            };
+            return PayambarE2EE.decryptPrivateKeyBackup(device, password);
         },
 
         async derivePasswordKey(password, saltBytes, iterations) {
-            const enc = new TextEncoder().encode(password);
-            const baseKey = await window.crypto.subtle.importKey('raw', enc, 'PBKDF2', false, ['deriveKey']);
-            return window.crypto.subtle.deriveKey(
-                {
-                    name: 'PBKDF2',
-                    salt: saltBytes,
-                    iterations,
-                    hash: 'SHA-256',
-                },
-                baseKey,
-                { name: 'AES-GCM', length: 256 },
-                false,
-                ['encrypt', 'decrypt']
-            );
+            return PayambarE2EE.derivePasswordKey(password, saltBytes, iterations);
         },
         async getUserDeviceKeys(userId) {
             const TTL_POPULATED_MS = 30000;
@@ -542,27 +488,7 @@ const app = createApp({
             return devices[0] || null;
         },
         async deriveAesKeyFromDevice(device) {
-            const privateKey = await window.crypto.subtle.importKey(
-                'jwk',
-                this.e2ee.privateJwk,
-                { name: 'ECDH', namedCurve: 'P-256' },
-                false,
-                ['deriveBits']
-            );
-            const publicJwk = JSON.parse(this.base64UrlToUtf8(device.public_key));
-            const recipientPublicKey = await window.crypto.subtle.importKey(
-                'jwk',
-                publicJwk,
-                { name: 'ECDH', namedCurve: 'P-256' },
-                false,
-                []
-            );
-            const bits = await window.crypto.subtle.deriveBits(
-                { name: 'ECDH', public: recipientPublicKey },
-                privateKey,
-                256
-            );
-            return window.crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+            return PayambarE2EE.deriveAesKeyFromDevice(this.e2ee.privateJwk, device);
         },
         async encryptTextMessage(receiverId, plainText) {
             try {
@@ -570,19 +496,13 @@ const app = createApp({
                 if (!ready) return null;
                 const device = await this.getRecipientDeviceKey(receiverId);
                 if (!device) return null;
-                const aesKey = await this.deriveAesKeyFromDevice(device);
-                const ivBytes = window.crypto.getRandomValues(new Uint8Array(12));
-                const encoded = new TextEncoder().encode(plainText);
-                const encryptedBuffer = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv: ivBytes }, aesKey, encoded);
-                return {
-                    encrypted: true,
-                    e2ee_v: 1,
-                    alg: 'AES-256-GCM',
-                    sender_device_id: this.e2ee.deviceId,
-                    key_id: this.e2ee.keyId,
-                    iv: this.bytesToBase64Url(ivBytes),
-                    ciphertext: this.bytesToBase64Url(new Uint8Array(encryptedBuffer)),
-                };
+                return PayambarE2EE.encryptTextWithDevice(
+                    this.e2ee.privateJwk,
+                    this.e2ee.deviceId,
+                    this.e2ee.keyId,
+                    device,
+                    plainText
+                );
             } catch (err) {
                 console.warn('E2EE encryption failed, will send plaintext:', err);
                 return null;
@@ -598,13 +518,12 @@ const app = createApp({
                     isOutgoing ? {} : { keyId: msg.key_id, deviceId: msg.sender_device_id }
                 );
                 if (!device) return { ...msg, content: '🔒 پیام رمزنگاری شده' };
-                const aesKey = await this.deriveAesKeyFromDevice(device);
-                const plaintextBuffer = await window.crypto.subtle.decrypt(
-                    { name: 'AES-GCM', iv: this.base64UrlToBytes(msg.iv) },
-                    aesKey,
-                    this.base64UrlToBytes(msg.ciphertext)
+                const content = await PayambarE2EE.decryptTextWithDevice(
+                    this.e2ee.privateJwk,
+                    device,
+                    msg.iv,
+                    msg.ciphertext
                 );
-                const content = new TextDecoder().decode(plaintextBuffer);
                 return { ...msg, content };
             } catch (err) {
                 console.warn('Decrypt failed', err);
@@ -616,56 +535,7 @@ const app = createApp({
             return Promise.all(messages.map((m) => this.maybeDecryptMessage(m)));
         },
         formatDate(value) {
-            if (!value) return '';
-            try {
-                // Handle Go zero time
-                if (value === '0001-01-01T00:00:00Z' || value.startsWith('0001-01-01')) {
-                    return '';
-                }
-
-                const date = new Date(value);
-                if (isNaN(date.getTime())) return '';
-
-                // Sanity check - if date is before year 2000, it's likely invalid
-                if (date.getFullYear() < 2000) return '';
-
-                const now = new Date();
-                const diffMs = now - date;
-
-                // If difference is negative (future date) or more than 10 years, something is wrong
-                if (diffMs < 0 || diffMs > 10 * 365 * 24 * 60 * 60 * 1000) {
-                    return '';
-                }
-
-                const diffSeconds = Math.floor(diffMs / 1000);
-                const diffMinutes = Math.floor(diffSeconds / 60);
-                const diffHours = Math.floor(diffMinutes / 60);
-                const diffDays = Math.floor(diffHours / 24);
-                const diffWeeks = Math.floor(diffDays / 7);
-                const diffMonths = Math.floor(diffDays / 30);
-                const diffYears = Math.floor(diffDays / 365);
-
-                const rtf = new Intl.RelativeTimeFormat('fa', { numeric: 'auto' });
-
-                if (diffSeconds < 60) {
-                    return rtf.format(-diffSeconds, 'second');
-                } else if (diffMinutes < 60) {
-                    return rtf.format(-diffMinutes, 'minute');
-                } else if (diffHours < 24) {
-                    return rtf.format(-diffHours, 'hour');
-                } else if (diffDays < 7) {
-                    return rtf.format(-diffDays, 'day');
-                } else if (diffWeeks < 4) {
-                    return rtf.format(-diffWeeks, 'week');
-                } else if (diffMonths < 12) {
-                    return rtf.format(-diffMonths, 'month');
-                } else {
-                    return rtf.format(-diffYears, 'year');
-                }
-            } catch (e) {
-                console.error('formatDate error:', e, value);
-                return '';
-            }
+            return PayambarFuncs.formatDate(value);
         },
         formatTime(value) {
             if (!value) return '';
@@ -683,9 +553,7 @@ const app = createApp({
             }
         },
         formatStatus(msg) {
-            if (msg.status === 'read') return '✓✓';
-            if (msg.status === 'delivered') return '✓';
-            return '';
+            return PayambarFuncs.formatStatus(msg);
         },
         getConversationPreview(conv) {
             if (!conv) return '';
@@ -1689,12 +1557,12 @@ const app = createApp({
             };
 
             this.ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    this.handleWebSocketMessage(data);
-                } catch (err) {
-                    console.error('WebSocket parse error:', err);
+                const data = PayambarFuncs.parseWebSocketMessage(event.data);
+                if (!data) {
+                    console.error('WebSocket parse error: invalid JSON');
+                    return;
                 }
+                this.handleWebSocketMessage(data);
             };
 
             this.ws.onerror = (err) => {
