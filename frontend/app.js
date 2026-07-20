@@ -261,23 +261,21 @@ const app = createApp({
             }
         },
         initAuth() {
-            const storedToken = localStorage.getItem('token');
-            const storedUserId = localStorage.getItem('userId');
-            const storedUsername = localStorage.getItem('username');
-            const storedDisplayName = localStorage.getItem('displayName');
+            const session = PayambarAuth.loadStoredSession(localStorage);
+            console.log('initAuth - localStorage:', {
+                storedToken: session?.token,
+                storedUserId: session?.userId,
+                storedUsername: session?.username,
+            });
 
-            console.log('initAuth - localStorage:', { storedToken, storedUserId, storedUsername });
-
-            // Validate stored auth data
-            if (PayambarFuncs.isValidAuth(storedToken, storedUserId, storedUsername)) {
-                this.token = storedToken;
-                this.userId = parseInt(storedUserId);
-                this.username = storedUsername;
-                this.profileDisplayName = storedDisplayName || '';
+            if (session) {
+                this.token = session.token;
+                this.userId = session.userId;
+                this.username = session.username;
+                this.profileDisplayName = session.displayName || '';
                 console.log('Auth restored from localStorage');
             } else {
-                // Clear invalid data
-                localStorage.clear();
+                PayambarAuth.clearSession(localStorage);
                 console.log('localStorage cleared - no valid auth data');
             }
         },
@@ -587,22 +585,17 @@ const app = createApp({
             PayambarFuncs.sortConversationsInPlace(this.conversations, this.messages);
         },
         updateConversationLastMessage(userId, timestamp) {
-            if (!userId || !timestamp) return;
-            const idx = this.conversations.findIndex(c => c.user_id === userId);
-            if (idx === -1) return;
-            this.conversations[idx].last_message_at = timestamp;
-            this.sortConversationsInPlace();
+            if (PayambarConversations.updateLastMessageAt(this.conversations, userId, timestamp)) {
+                this.sortConversationsInPlace();
+            }
         },
         async handleLogin() {
             this.authError = '';
             try {
-                const res = await fetch(`${API_URL}/auth/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: this.login.username, password: this.login.password }),
+                const data = await PayambarAuth.login(API_URL, {
+                    username: this.login.username,
+                    password: this.login.password,
                 });
-                if (!res.ok) throw new Error((await res.json()).error || 'Login failed');
-                const data = await res.json();
                 this.authPassword = this.login.password;
                 this.suppressBackupWarningOnce = false;
                 this.setAuth(data);
@@ -612,22 +605,20 @@ const app = createApp({
         },
         async handleRegister() {
             this.authError = '';
-            if (!this.acceptRules) {
-                this.authError = 'لطفاً قوانین را بپذیرید.';
-                return;
-            }
-            if (this.register.password !== this.register.confirm) {
-                this.authError = 'رمز‌عبورها مطابقت ندارند';
+            const validation = PayambarAuth.validateRegister({
+                acceptRules: this.acceptRules,
+                password: this.register.password,
+                confirm: this.register.confirm,
+            });
+            if (!validation.ok) {
+                this.authError = validation.error;
                 return;
             }
             try {
-                const res = await fetch(`${API_URL}/auth/register`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username: this.register.username, password: this.register.password }),
+                const data = await PayambarAuth.register(API_URL, {
+                    username: this.register.username,
+                    password: this.register.password,
                 });
-                if (!res.ok) throw new Error((await res.json()).error || 'Registration failed');
-                const data = await res.json();
                 this.authPassword = this.register.password;
                 this.suppressBackupWarningOnce = true; // first device has no backup; avoid warning
                 this.setAuth(data);
@@ -643,9 +634,11 @@ const app = createApp({
             this.token = data.token;
             this.userId = data.user_id;
             this.username = data.username;
-            localStorage.setItem('token', this.token);
-            localStorage.setItem('userId', this.userId);
-            localStorage.setItem('username', this.username);
+            PayambarAuth.persistSession(localStorage, {
+                token: this.token,
+                userId: this.userId,
+                username: this.username,
+            });
             this.loadConversations();
             this.loadMyProfile();
             // Ensure device key is registered as soon as the user is authenticated
@@ -697,7 +690,7 @@ const app = createApp({
                 clearTimeout(this.newChatSearchTimeout);
                 this.newChatSearchTimeout = null;
             }
-            localStorage.clear();
+            PayambarAuth.clearSession(localStorage);
             this.closeWebSocket(true);
         },
         handleLogout() {
@@ -928,9 +921,7 @@ const app = createApp({
         async loadConversations() {
             this.loadingConversations = true;
             try {
-                const res = await fetch(`${API_URL}/conversations`, {
-                    headers: { Authorization: `Bearer ${this.token}` },
-                });
+                const res = await PayambarConversations.fetchConversations(API_URL, this.token);
                 if (!res.ok) {
                     if (res.status === 401) {
                         this.clearAuth();
@@ -956,10 +947,11 @@ const app = createApp({
             }
         },
         hydrateEncryptedConversationPreviews() {
-            for (const conv of this.conversations) {
-                const preview = (conv.last_message_preview || '').trim();
-                const hasLocalPreview = this.getConversationPreview({ ...conv, last_message_preview: '' });
-                if (hasLocalPreview || preview !== 'پیام رمزنگاری شده') continue;
+            const needing = PayambarConversations.conversationsNeedingPreviewHydration(
+                this.conversations,
+                this.messages
+            );
+            for (const conv of needing) {
                 this.refreshConversationPreview(conv.user_id).catch((err) => {
                     console.warn('Failed to refresh conversation preview:', err);
                 });
@@ -967,8 +959,9 @@ const app = createApp({
         },
         async refreshConversationPreview(userId) {
             if (!userId || this.messages[userId]?.length) return;
-            const res = await fetch(`${API_URL}/messages?user_id=${userId}&limit=1`, {
-                headers: { Authorization: `Bearer ${this.token}` },
+            const res = await PayambarMessages.fetchMessages(API_URL, this.token, {
+                userId,
+                limit: 1,
             });
             if (!res.ok) return;
             const data = await res.json();
@@ -988,14 +981,12 @@ const app = createApp({
             this.chatListOpen = false;
 
             // Reset unread count for this conversation in UI
-            const convIndex = this.conversations.findIndex(c => c.user_id === conv.user_id);
-            if (convIndex !== -1) {
-                this.conversations[convIndex].unread_count = 0;
-            }
+            PayambarConversations.clearUnreadCount(this.conversations, conv.user_id);
 
             try {
-                const res = await fetch(`${API_URL}/messages?user_id=${conv.user_id}&limit=50`, {
-                    headers: { Authorization: `Bearer ${this.token}` },
+                const res = await PayambarMessages.fetchMessages(API_URL, this.token, {
+                    userId: conv.user_id,
+                    limit: 50,
                 });
                 if (!res.ok) {
                     if (res.status === 401) {
@@ -1011,8 +1002,7 @@ const app = createApp({
                 }
                 const data = await res.json();
                 this.messages[conv.user_id] = await this.decryptMessageList(data.messages || []);
-                // If we got 50 messages, there might be more
-                this.hasMoreMessages[conv.user_id] = (data.messages || []).length >= 50;
+                this.hasMoreMessages[conv.user_id] = PayambarMessages.hasMoreMessages(data.messages || []);
 
                 const latestMessage = this.messages[conv.user_id].length
                     ? this.messages[conv.user_id][this.messages[conv.user_id].length - 1]
@@ -1021,17 +1011,15 @@ const app = createApp({
                     this.updateConversationLastMessage(conv.user_id, latestMessage.created_at);
                 }
 
-                // Mark all unread messages as read via WebSocket
                 if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                    for (const msg of this.messages[conv.user_id]) {
-                        if (Number(msg.sender_id) !== Number(this.userId) && msg.status !== 'read') {
-                            this.ws.send(JSON.stringify({ type: 'mark_read', message_id: msg.id }));
-                        }
+                    for (const messageId of PayambarMessages.unreadIncomingIds(
+                        this.messages[conv.user_id],
+                        this.userId
+                    )) {
+                        this.ws.send(JSON.stringify({ type: 'mark_read', message_id: messageId }));
                     }
                 }
 
-                // Scroll to bottom after DOM update with delay for rendering
-                // Use longer delay for mobile devices
                 this.$nextTick(() => {
                     setTimeout(() => this.scrollToBottom(), 100);
                 });
@@ -1048,15 +1036,12 @@ const app = createApp({
 
             const receiverId = Number(this.currentConversationId);
             const clientMessageId = `client-${Date.now()}`;
-            const msg = {
-                id: null,
-                client_message_id: clientMessageId,
-                sender_id: this.userId,
-                receiver_id: receiverId,
+            const msg = PayambarMessages.buildOptimisticTextMessage({
+                userId: this.userId,
+                receiverId,
                 content,
-                status: 'sent',
-                created_at: new Date().toISOString(),
-            };
+                clientMessageId,
+            });
             if (!this.messages[receiverId]) this.messages[receiverId] = [];
             this.messages[receiverId].push(msg);
             this.updateConversationLastMessage(receiverId, msg.created_at);
@@ -1078,13 +1063,12 @@ const app = createApp({
                 this.e2ee.noKeyWarnedRecipients[receiverId] = true;
             }
 
-            const payload = {
-                type: 'message',
-                receiver_id: receiverId,
-                content: encryptedPayload ? '' : content,
-                client_message_id: clientMessageId,
-            };
-            if (encryptedPayload) Object.assign(payload, encryptedPayload);
+            const payload = PayambarMessages.buildWsTextPayload({
+                receiverId,
+                content,
+                clientMessageId,
+                encryptedPayload,
+            });
 
             this.ws.send(JSON.stringify(payload));
             this.$nextTick(() => {
@@ -1132,29 +1116,17 @@ const app = createApp({
                 // Single source of truth to prevent duplicates:
                 // when WS is connected, wait for WS echo and do not append locally.
                 if (!wsOpen) {
-                    if (!this.messages[receiverId]) this.messages[receiverId] = [];
-                    const existingIdx = this.messages[receiverId]
-                        .findIndex((m) => Number(m.id) === messageID);
                     const createdAt = new Date().toISOString();
-                    const msg = {
-                        id: messageID,
-                        sender_id: this.userId,
-                        receiver_id: receiverId,
-                        content: `📎 ${data.file_name}`,
-                        file_name: data.file_name,
-                        file_url: data.file_url,
-                        file_content_type: data.file_content_type || file.type || '',
-                        status: 'sent',
-                        created_at: createdAt,
-                    };
-                    if (existingIdx >= 0) {
-                        this.messages[receiverId][existingIdx] = {
-                            ...this.messages[receiverId][existingIdx],
-                            ...msg,
-                        };
-                    } else {
-                        this.messages[receiverId].push(msg);
-                    }
+                    const msg = PayambarMessages.buildOfflineFileMessage({
+                        messageId: messageID,
+                        userId: this.userId,
+                        receiverId,
+                        fileName: data.file_name,
+                        fileUrl: data.file_url,
+                        fileContentType: data.file_content_type || file.type || '',
+                        createdAt,
+                    });
+                    PayambarMessages.upsertOfflineFileMessage(this.messages, receiverId, msg);
                     this.updateConversationLastMessage(receiverId, createdAt);
                     if (Number(this.currentConversationId) === receiverId) {
                         this.$nextTick(() => this.scrollToBottom());
@@ -1292,8 +1264,10 @@ const app = createApp({
 
             try {
                 const offset = currentMessages.length;
-                const res = await fetch(`${API_URL}/messages?user_id=${conversationId}&limit=50&offset=${offset}`, {
-                    headers: { Authorization: `Bearer ${this.token}` },
+                const res = await PayambarMessages.fetchMessages(API_URL, this.token, {
+                    userId: conversationId,
+                    limit: 50,
+                    offset,
                 });
                 if (!res.ok) {
                     if (res.status === 404) {
@@ -1307,10 +1281,8 @@ const app = createApp({
                 const olderMessages = await this.decryptMessageList(data.messages || []);
 
                 if (olderMessages.length > 0) {
-                    // Prepend older messages to existing ones
                     this.messages[conversationId] = [...olderMessages, ...currentMessages];
 
-                    // Maintain scroll position after prepending
                     this.$nextTick(() => {
                         if (container) {
                             const newScrollHeight = container.scrollHeight;
@@ -1319,8 +1291,7 @@ const app = createApp({
                     });
                 }
 
-                // If we got less than 50, no more messages
-                this.hasMoreMessages[conversationId] = olderMessages.length >= 50;
+                this.hasMoreMessages[conversationId] = PayambarMessages.hasMoreMessages(olderMessages);
             } catch (err) {
                 console.error('Error loading older messages:', err);
             } finally {
@@ -1379,8 +1350,9 @@ const app = createApp({
             const container = document.querySelector('.messages-container');
             const wasNearBottom = this.isNearBottom(container);
             try {
-                const res = await fetch(`${API_URL}/messages?user_id=${conversationId}&limit=50`, {
-                    headers: { Authorization: `Bearer ${this.token}` },
+                const res = await PayambarMessages.fetchMessages(API_URL, this.token, {
+                    userId: conversationId,
+                    limit: 50,
                 });
                 if (!res.ok) {
                     if (res.status === 404) {
@@ -1392,7 +1364,7 @@ const app = createApp({
 
                 const data = await res.json();
                 this.messages[conversationId] = await this.decryptMessageList(data.messages || []);
-                this.hasMoreMessages[conversationId] = (data.messages || []).length >= 50;
+                this.hasMoreMessages[conversationId] = PayambarMessages.hasMoreMessages(data.messages || []);
 
                 const latestMessage = this.messages[conversationId].length
                     ? this.messages[conversationId][this.messages[conversationId].length - 1]
@@ -1406,7 +1378,6 @@ const app = createApp({
                 }
                 this.updatePullReady();
 
-                // Also refresh conversations list
                 this.loadConversations();
             } catch (err) {
                 console.error('Error refreshing conversation:', err);
@@ -1440,12 +1411,13 @@ const app = createApp({
             }
         },
         connectWebSocket() {
-            const token = this.token;
-            const isTokenValid = typeof token === 'string' && token && token !== 'undefined' && token !== 'null';
-            if (!this.isAuthed || !isTokenValid) {
-                return;
-            }
-            if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+            if (
+                !PayambarWs.canConnect({
+                    isAuthed: this.isAuthed,
+                    token: this.token,
+                    existingWs: this.ws,
+                })
+            ) {
                 return;
             }
             if (this.wsReconnectTimer) {
@@ -1454,54 +1426,59 @@ const app = createApp({
             }
             this.wsIntentionalClose = false;
             this.wsConnected = false;
-            const wsUrlWithToken = `${WS_URL}?token=${encodeURIComponent(token)}`;
-            this.ws = new WebSocket(wsUrlWithToken);
 
-            this.ws.onopen = () => {
-                this.wsReconnectAttempts = 0;
-                this.serverOffline = false;
-                this.wsConnected = true;
-            };
-
-            this.ws.onmessage = (event) => {
-                const data = PayambarFuncs.parseWebSocketMessage(event.data);
-                if (!data) {
-                    console.error('WebSocket parse error: invalid JSON');
-                    return;
-                }
-                this.handleWebSocketMessage(data);
-            };
-
-            this.ws.onerror = (err) => {
-                if (!this.isAuthed || this.wsIntentionalClose) {
-                    return;
-                }
-                console.error('WebSocket error:', err);
-                this.serverOffline = true;
-                this.wsConnected = false;
-            };
-
-            this.ws.onclose = () => {
-                const isIntentional = this.wsIntentionalClose || !this.isAuthed;
-                this.ws = null;
-                this.wsConnected = false;
-                if (isIntentional) {
-                    this.wsIntentionalClose = false;
-                    return;
-                }
-                this.serverOffline = true;
-                if (this.wsReconnectAttempts < this.wsMaxReconnectAttempts && this.isAuthed) {
+            this.ws = PayambarWs.createConnection({
+                wsUrl: WS_URL,
+                token: this.token,
+                onOpen: () => {
+                    this.wsReconnectAttempts = 0;
+                    this.serverOffline = false;
+                    this.wsConnected = true;
+                },
+                onMessage: (data) => {
+                    this.handleWebSocketMessage(data);
+                },
+                onError: (err) => {
+                    if (!this.isAuthed || this.wsIntentionalClose) {
+                        return;
+                    }
+                    console.error('WebSocket error:', err);
+                    this.serverOffline = true;
+                    this.wsConnected = false;
+                },
+                onClose: () => {
+                    const intentionalClose = this.wsIntentionalClose;
+                    this.ws = null;
+                    this.wsConnected = false;
+                    if (
+                        !PayambarWs.shouldReconnect({
+                            isAuthed: this.isAuthed,
+                            intentionalClose: intentionalClose || !this.isAuthed,
+                            attempts: this.wsReconnectAttempts,
+                            maxAttempts: this.wsMaxReconnectAttempts,
+                        })
+                    ) {
+                        if (intentionalClose || !this.isAuthed) {
+                            this.wsIntentionalClose = false;
+                        }
+                        if (!intentionalClose && this.isAuthed) {
+                            this.serverOffline = true;
+                        }
+                        return;
+                    }
+                    this.serverOffline = true;
                     this.wsReconnectAttempts++;
-                    const delay = Math.min(
-                        this.wsReconnectBaseDelay * Math.pow(2, this.wsReconnectAttempts - 1),
+                    const delay = PayambarWs.reconnectDelay(
+                        this.wsReconnectAttempts,
+                        this.wsReconnectBaseDelay,
                         this.wsReconnectMaxDelay
                     );
                     this.wsReconnectTimer = setTimeout(() => {
                         this.wsReconnectTimer = null;
                         this.connectWebSocket();
                     }, delay);
-                }
-            };
+                },
+            });
         },
         async handleWebSocketMessage(data) {
             if (data.type === 'call_offer') {
@@ -1510,7 +1487,9 @@ const app = createApp({
                     return;
                 }
                 // Fetch sender info if not in conversations
-                const sender = this.conversations.find(c => c.user_id === data.sender_id) || { username: 'کاربر', user_id: data.sender_id };
+                const sender =
+                    PayambarConversations.findByUserId(this.conversations, data.sender_id) ||
+                    { username: 'کاربر', user_id: data.sender_id };
                 this.incomingCall = {
                     sender_id: data.sender_id,
                     username: sender.username,
@@ -1543,112 +1522,30 @@ const app = createApp({
                 const normalizedMessage = await this.maybeDecryptMessage(data);
                 const incomingContent = normalizedMessage.content;
                 const senderId = Number(data.sender_id);
-                const receiverId = Number(data.receiver_id);
-                const convUser = senderId === Number(this.userId) ? receiverId : senderId;
-                if (!this.messages[convUser]) this.messages[convUser] = [];
-                const incomingID = Number(data.message_id);
-                const existingByID = this.messages[convUser].findIndex((m) => Number(m.id) === incomingID);
+                const { convUser } = PayambarMessages.applyIncomingMessage(
+                    this.messages,
+                    this.userId,
+                    data,
+                    incomingContent
+                );
 
-                // Replace temp message by client_message_id if present
-                if (data.client_message_id) {
-                    const idx = this.messages[convUser].findIndex((m) => m.client_message_id === data.client_message_id);
-                    if (idx >= 0) {
-                        this.messages[convUser][idx] = {
-                            ...this.messages[convUser][idx],
-                            id: data.message_id,
-                            status: data.status,
-                            file_name: data.file_name || this.messages[convUser][idx].file_name,
-                            file_url: data.file_url || this.messages[convUser][idx].file_url,
-                            file_content_type: data.file_content_type || this.messages[convUser][idx].file_content_type,
-                        };
-                    } else if (existingByID >= 0) {
-                        this.messages[convUser][existingByID] = {
-                            ...this.messages[convUser][existingByID],
-                            status: data.status,
-                            file_name: data.file_name || this.messages[convUser][existingByID].file_name,
-                            file_url: data.file_url || this.messages[convUser][existingByID].file_url,
-                            file_content_type: data.file_content_type || this.messages[convUser][existingByID].file_content_type,
-                        };
-                    } else {
-                        this.messages[convUser].push({
-                            id: data.message_id,
-                            sender_id: data.sender_id,
-                            receiver_id: data.receiver_id,
-                            content: incomingContent,
-                            status: data.status,
-                            created_at: data.created_at,
-                            client_message_id: data.client_message_id,
-                            file_name: data.file_name,
-                            file_url: data.file_url,
-                            file_content_type: data.file_content_type,
-                            encrypted: !!data.encrypted,
-                            e2ee_v: data.e2ee_v,
-                            alg: data.alg,
-                            sender_device_id: data.sender_device_id,
-                            key_id: data.key_id,
-                            iv: data.iv,
-                            ciphertext: data.ciphertext,
-                            aad: data.aad,
-                        });
-                    }
-                } else {
-                    if (existingByID >= 0) {
-                        this.messages[convUser][existingByID] = {
-                            ...this.messages[convUser][existingByID],
-                            status: data.status,
-                            file_name: data.file_name || this.messages[convUser][existingByID].file_name,
-                            file_url: data.file_url || this.messages[convUser][existingByID].file_url,
-                            file_content_type: data.file_content_type || this.messages[convUser][existingByID].file_content_type,
-                        };
-                    } else {
-                        this.messages[convUser].push({
-                            id: data.message_id,
-                            sender_id: data.sender_id,
-                            receiver_id: data.receiver_id,
-                            content: incomingContent,
-                            status: data.status,
-                            created_at: data.created_at,
-                            file_name: data.file_name,
-                            file_url: data.file_url,
-                            file_content_type: data.file_content_type,
-                            encrypted: !!data.encrypted,
-                            e2ee_v: data.e2ee_v,
-                            alg: data.alg,
-                            sender_device_id: data.sender_device_id,
-                            key_id: data.key_id,
-                            iv: data.iv,
-                            ciphertext: data.ciphertext,
-                            aad: data.aad,
-                        });
-                    }
-                }
-
-                // Update local conversation's last_message_at for immediate sorting
-                const convIndex = this.conversations.findIndex(c => c.user_id === convUser);
-                if (convIndex !== -1) {
-                    this.conversations[convIndex].last_message_at = data.created_at || new Date().toISOString();
-                }
+                PayambarConversations.updateLastMessageAt(
+                    this.conversations,
+                    convUser,
+                    data.created_at || new Date().toISOString()
+                );
 
                 if (Number(this.currentConversationId) === convUser) {
-                    // Mark as delivered/read
                     this.ws?.send(JSON.stringify({ type: 'mark_delivered', message_id: data.message_id }));
                     this.ws?.send(JSON.stringify({ type: 'mark_read', message_id: data.message_id }));
-                    // Scroll to bottom for new messages in current conversation
                     this.$nextTick(() => this.scrollToBottom());
                 } else if (senderId !== Number(this.userId)) {
-                    // Increment unread count for non-active conversation
-                    if (convIndex !== -1) {
-                        this.conversations[convIndex].unread_count = (this.conversations[convIndex].unread_count || 0) + 1;
-                    }
+                    PayambarConversations.bumpUnreadCount(this.conversations, convUser);
                 }
 
                 this.loadConversations();
             } else if (data.type === 'status_update') {
-                const allMsgs = Object.values(this.messages).flat();
-                const msg = allMsgs.find((m) => m.id === data.message_id);
-                if (msg) {
-                    msg.status = data.status;
-                }
+                PayambarFuncs.updateMessageStatus(this.messages, data.message_id, data.status);
             }
         },
         openNewChat() {
@@ -1721,25 +1618,21 @@ const app = createApp({
         },
         async startConversation(userId, username, displayName = '', avatarUrl = '', isOnline = false) {
             console.log('Starting conversation with:', userId, username);
-            // Check by user_id which is more reliable than participants array
-            const existing = this.conversations.find((c) => c.user_id === userId);
+            const existing = PayambarConversations.findByUserId(this.conversations, userId);
             if (existing) {
                 console.log('Found existing conversation:', existing);
-                // Update online status from search
                 existing.is_online = isOnline;
                 this.selectConversation(existing);
                 return;
             }
             try {
-                const res = await fetch(`${API_URL}/conversations`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
-                    body: JSON.stringify({ participant_id: userId }),
-                });
-                if (!res.ok) throw new Error('Failed to create conversation');
-                const conversation = await res.json();
+                const conversation = await PayambarConversations.createConversation(
+                    API_URL,
+                    this.token,
+                    userId
+                );
                 console.log('Created conversation:', conversation);
-                this.conversations.unshift(conversation); // Add to beginning of list
+                this.conversations.unshift(conversation);
                 console.log('Conversations after adding:', this.conversations);
                 this.selectConversation(conversation);
             } catch (err) {
@@ -1840,10 +1733,11 @@ const app = createApp({
             }
 
             try {
-                const res = await fetch(`${API_URL}/conversations/${conversation.id}`, {
-                    method: 'DELETE',
-                    headers: { Authorization: `Bearer ${this.token}` },
-                });
+                const res = await PayambarConversations.deleteConversation(
+                    API_URL,
+                    this.token,
+                    conversation.id
+                );
 
                 if (!res.ok) {
                     if (res.status === 404) {
@@ -1930,24 +1824,18 @@ const app = createApp({
             }
 
             try {
-                const res = await fetch(`${API_URL}/messages/${message.id}`, {
-                    method: 'DELETE',
-                    headers: { Authorization: `Bearer ${this.token}` },
-                });
+                const res = await PayambarMessages.deleteMessage(API_URL, this.token, message.id);
 
                 if (!res.ok) {
                     const errData = await res.json();
                     throw new Error(errData.error || 'Delete failed');
                 }
 
-                // Remove message from local state
-                const convMessages = this.messages[this.currentConversationId];
-                if (convMessages) {
-                    const idx = convMessages.findIndex(m => m.id === message.id);
-                    if (idx !== -1) {
-                        convMessages.splice(idx, 1);
-                    }
-                }
+                PayambarMessages.removeMessageById(
+                    this.messages,
+                    this.currentConversationId,
+                    message.id
+                );
             } catch (err) {
                 console.error('Error deleting message:', err);
                 alert('خطا در حذف پیام');
