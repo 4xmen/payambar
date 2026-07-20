@@ -128,6 +128,168 @@
         return '';
     }
 
+    const PERSIAN_DIGITS = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+
+    function toPersianDigits(value) {
+        return String(value).replace(/[0-9]/g, (d) => PERSIAN_DIGITS[parseInt(d, 10)]);
+    }
+
+    function formatTime(value) {
+        if (!value) return '';
+        try {
+            const date = new Date(value);
+            if (isNaN(date.getTime())) return '';
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            return toPersianDigits(`${hours}:${minutes}`);
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function formatRecordingDuration(seconds) {
+        const total = Math.max(0, Math.floor(Number(seconds) || 0));
+        const mins = Math.floor(total / 60).toString().padStart(2, '0');
+        const secs = (total % 60).toString().padStart(2, '0');
+        return `${mins}:${secs}`;
+    }
+
+    function getMessageFileName(msg) {
+        const fromName = (msg?.file_name || '').toLowerCase();
+        if (fromName) return fromName;
+        try {
+            const url = String(msg?.file_url || '').split('?')[0];
+            return url.toLowerCase();
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function isAudioMessage(msg) {
+        if (!msg || !msg.file_url) return false;
+        const fileName = getMessageFileName(msg);
+        if (fileName.startsWith('voice-')) return true;
+        const contentType =
+            typeof msg.file_content_type === 'string' ? msg.file_content_type.toLowerCase() : '';
+        if (contentType.startsWith('audio/')) return true;
+        return (
+            fileName.endsWith('.webm') ||
+            fileName.endsWith('.ogg') ||
+            fileName.endsWith('.mp3') ||
+            fileName.endsWith('.wav') ||
+            fileName.endsWith('.m4a')
+        );
+    }
+
+    function isImageMessage(msg) {
+        if (!msg || !msg.file_url) return false;
+        const contentType =
+            typeof msg.file_content_type === 'string' ? msg.file_content_type.toLowerCase() : '';
+        if (contentType.startsWith('image/')) return true;
+        const fileName = getMessageFileName(msg);
+        return (
+            fileName.endsWith('.jpg') ||
+            fileName.endsWith('.jpeg') ||
+            fileName.endsWith('.png') ||
+            fileName.endsWith('.gif') ||
+            fileName.endsWith('.webp') ||
+            fileName.endsWith('.bmp') ||
+            fileName.endsWith('.svg')
+        );
+    }
+
+    function isVideoMessage(msg) {
+        if (!msg || !msg.file_url) return false;
+        if (isAudioMessage(msg)) return false;
+        const contentType =
+            typeof msg.file_content_type === 'string' ? msg.file_content_type.toLowerCase() : '';
+        if (contentType.startsWith('video/')) return true;
+        const fileName = getMessageFileName(msg);
+        return (
+            fileName.endsWith('.mp4') ||
+            fileName.endsWith('.webm') ||
+            fileName.endsWith('.mov') ||
+            fileName.endsWith('.mkv') ||
+            fileName.endsWith('.m4v')
+        );
+    }
+
+    function getConversationPreview(conv, messagesByUser) {
+        if (!conv) return '';
+        const localMessages = (messagesByUser && messagesByUser[conv.user_id]) || [];
+        const latest = localMessages[localMessages.length - 1];
+        if (latest?.file_name) return latest.file_name;
+        if (latest?.file_url) return 'فایل';
+        if (latest?.content) return latest.content.trim();
+        if (typeof conv.last_message_preview === 'string' && conv.last_message_preview.trim()) {
+            return conv.last_message_preview.trim();
+        }
+        return '';
+    }
+
+    function shouldShowMessageStatus(msg, index, messages, userId) {
+        if (!msg) return false;
+        if (Number(msg.sender_id) !== Number(userId)) return false;
+        const list = messages || [];
+        for (let i = list.length - 1; i >= 0; i--) {
+            if (Number(list[i]?.sender_id) === Number(userId)) {
+                return i === index;
+            }
+        }
+        return false;
+    }
+
+    function parseTimestamp(value) {
+        if (!value) return 0;
+        const ts = new Date(value).getTime();
+        return Number.isFinite(ts) ? ts : 0;
+    }
+
+    function getConversationLastTimestamp(conv, messagesByUser) {
+        if (!conv) return 0;
+        const fromConversation = parseTimestamp(conv.last_message_at);
+        const localMessages = (messagesByUser && messagesByUser[conv.user_id]) || [];
+        let localMax = 0;
+        for (const msg of localMessages) {
+            const ts = parseTimestamp(msg?.created_at);
+            if (ts > localMax) localMax = ts;
+        }
+        return Math.max(fromConversation, localMax);
+    }
+
+    function sortConversations(conversations, messagesByUser) {
+        return [...conversations].sort(
+            (a, b) =>
+                getConversationLastTimestamp(b, messagesByUser) -
+                getConversationLastTimestamp(a, messagesByUser)
+        );
+    }
+
+    function sortConversationsInPlace(conversations, messagesByUser) {
+        conversations.sort(
+            (a, b) =>
+                getConversationLastTimestamp(b, messagesByUser) -
+                getConversationLastTimestamp(a, messagesByUser)
+        );
+        return conversations;
+    }
+
+    function normalizeSearchUser(user) {
+        const userId = Number(user?.id);
+        const username = typeof user?.username === 'string' ? user.username : '';
+        const displayName = typeof user?.display_name === 'string' ? user.display_name : '';
+        const avatarUrl = typeof user?.avatar_url === 'string' ? user.avatar_url : '';
+        const isOnline = !!user?.is_online;
+        return {
+            id: userId,
+            username,
+            displayName,
+            avatarUrl,
+            isOnline,
+            nameLabel: displayName || username || '?',
+        };
+    }
+
     const PayambarFuncs = {
         isValidAuth,
         parseWebSocketMessage,
@@ -138,6 +300,20 @@
         replaceMessageByClientId,
         formatDate,
         formatStatus,
+        toPersianDigits,
+        formatTime,
+        formatRecordingDuration,
+        getMessageFileName,
+        isAudioMessage,
+        isImageMessage,
+        isVideoMessage,
+        getConversationPreview,
+        shouldShowMessageStatus,
+        parseTimestamp,
+        getConversationLastTimestamp,
+        sortConversations,
+        sortConversationsInPlace,
+        normalizeSearchUser,
     };
 
     global.PayambarFuncs = PayambarFuncs;

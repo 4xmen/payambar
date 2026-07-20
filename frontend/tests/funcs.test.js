@@ -164,4 +164,138 @@ describe('PayambarFuncs', () => {
             ).toBe(false);
         });
     });
+
+    describe('formatTime and duration', () => {
+        it('toPersianDigits converts ASCII digits', () => {
+            expect(F.toPersianDigits('12:05')).toBe('۱۲:۰۵');
+        });
+
+        it('formatTime returns empty for invalid values', () => {
+            expect(F.formatTime(null)).toBe('');
+            expect(F.formatTime('not-a-date')).toBe('');
+        });
+
+        it('formatTime returns Persian digits for a valid date', () => {
+            const result = F.formatTime('2026-01-25T14:05:00');
+            expect(result).toMatch(/[۰-۹]{2}:[۰-۹]{2}/);
+        });
+
+        it('formatRecordingDuration pads mm:ss', () => {
+            expect(F.formatRecordingDuration(0)).toBe('00:00');
+            expect(F.formatRecordingDuration(65)).toBe('01:05');
+            expect(F.formatRecordingDuration(125)).toBe('02:05');
+        });
+    });
+
+    describe('message media helpers', () => {
+        it('getMessageFileName prefers file_name then url path', () => {
+            expect(F.getMessageFileName({ file_name: 'Photo.JPG' })).toBe('photo.jpg');
+            expect(F.getMessageFileName({ file_url: '/files/a.PNG?x=1' })).toBe('/files/a.png');
+            expect(F.getMessageFileName({})).toBe('');
+        });
+
+        it('detects audio, image, and video messages', () => {
+            expect(
+                F.isAudioMessage({ file_url: '/x', file_name: 'voice-1.webm', file_content_type: '' })
+            ).toBe(true);
+            expect(
+                F.isAudioMessage({ file_url: '/x', file_name: 'clip.mp3', file_content_type: 'audio/mpeg' })
+            ).toBe(true);
+            expect(
+                F.isImageMessage({ file_url: '/x', file_name: 'a.png', file_content_type: 'image/png' })
+            ).toBe(true);
+            expect(
+                F.isImageMessage({ file_url: '/x', file_name: 'a.webp', file_content_type: '' })
+            ).toBe(true);
+            expect(
+                F.isVideoMessage({ file_url: '/x', file_name: 'a.mp4', file_content_type: 'video/mp4' })
+            ).toBe(true);
+            expect(
+                F.isVideoMessage({ file_url: '/x', file_name: 'voice-1.webm', file_content_type: '' })
+            ).toBe(false);
+            expect(F.isAudioMessage({})).toBe(false);
+        });
+    });
+
+    describe('conversation preview and status', () => {
+        it('getConversationPreview prefers local latest message', () => {
+            const conv = { user_id: 10, last_message_preview: 'server preview' };
+            const messages = {
+                10: [{ content: ' local hi ' }],
+            };
+            expect(F.getConversationPreview(conv, messages)).toBe('local hi');
+            expect(F.getConversationPreview(conv, {})).toBe('server preview');
+            expect(
+                F.getConversationPreview(conv, { 10: [{ file_url: '/f', file_name: '' }] })
+            ).toBe('فایل');
+            expect(
+                F.getConversationPreview(conv, { 10: [{ file_name: 'doc.pdf' }] })
+            ).toBe('doc.pdf');
+        });
+
+        it('shouldShowMessageStatus only for last outgoing message', () => {
+            const list = [
+                { sender_id: 1, status: 'sent' },
+                { sender_id: 2, status: 'sent' },
+                { sender_id: 1, status: 'delivered' },
+            ];
+            expect(F.shouldShowMessageStatus(list[0], 0, list, 1)).toBe(false);
+            expect(F.shouldShowMessageStatus(list[2], 2, list, 1)).toBe(true);
+            expect(F.shouldShowMessageStatus(list[1], 1, list, 1)).toBe(false);
+        });
+    });
+
+    describe('conversation sorting', () => {
+        it('parseTimestamp returns 0 for empty/invalid', () => {
+            expect(F.parseTimestamp('')).toBe(0);
+            expect(F.parseTimestamp(null)).toBe(0);
+            expect(F.parseTimestamp('bad')).toBe(0);
+        });
+
+        it('sortConversations orders by latest local or conversation timestamp', () => {
+            const conversations = [
+                { user_id: 1, last_message_at: '2026-01-01T00:00:00Z' },
+                { user_id: 2, last_message_at: '2026-01-02T00:00:00Z' },
+            ];
+            const messages = {
+                1: [{ created_at: '2026-01-03T00:00:00Z' }],
+            };
+            const sorted = F.sortConversations(conversations, messages);
+            expect(sorted[0].user_id).toBe(1);
+            expect(sorted[1].user_id).toBe(2);
+            expect(conversations[0].user_id).toBe(1);
+        });
+
+        it('sortConversationsInPlace mutates the array', () => {
+            const conversations = [
+                { user_id: 1, last_message_at: '2026-01-01T00:00:00Z' },
+                { user_id: 2, last_message_at: '2026-01-05T00:00:00Z' },
+            ];
+            F.sortConversationsInPlace(conversations, {});
+            expect(conversations[0].user_id).toBe(2);
+        });
+    });
+
+    describe('normalizeSearchUser', () => {
+        it('normalizes fields and nameLabel fallback', () => {
+            expect(
+                F.normalizeSearchUser({
+                    id: '7',
+                    username: 'ali',
+                    display_name: 'Ali',
+                    avatar_url: '/a.png',
+                    is_online: 1,
+                })
+            ).toEqual({
+                id: 7,
+                username: 'ali',
+                displayName: 'Ali',
+                avatarUrl: '/a.png',
+                isOnline: true,
+                nameLabel: 'Ali',
+            });
+            expect(F.normalizeSearchUser({ id: 3, username: 'bob' }).nameLabel).toBe('bob');
+            expect(F.normalizeSearchUser({}).nameLabel).toBe('?');
+        });
+    });
 });

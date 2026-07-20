@@ -19,19 +19,7 @@ const UserSearchItem = {
     emits: ['select'],
     computed: {
         normalizedUser() {
-            const userId = Number(this.user?.id);
-            const username = typeof this.user?.username === 'string' ? this.user.username : '';
-            const displayName = typeof this.user?.display_name === 'string' ? this.user.display_name : '';
-            const avatarUrl = typeof this.user?.avatar_url === 'string' ? this.user.avatar_url : '';
-            const isOnline = !!this.user?.is_online;
-            return {
-                id: userId,
-                username,
-                displayName,
-                avatarUrl,
-                isOnline,
-                nameLabel: displayName || username || '?',
-            };
+            return PayambarFuncs.normalizeSearchUser(this.user);
         },
     },
     methods: {
@@ -538,103 +526,36 @@ const app = createApp({
             return PayambarFuncs.formatDate(value);
         },
         formatTime(value) {
-            if (!value) return '';
-            try {
-                const date = new Date(value);
-                if (isNaN(date.getTime())) return '';
-                const hours = date.getHours().toString().padStart(2, '0');
-                const minutes = date.getMinutes().toString().padStart(2, '0');
-                // Convert to Persian numerals
-                const persianNums = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
-                const timeStr = `${hours}:${minutes}`;
-                return timeStr.replace(/[0-9]/g, d => persianNums[parseInt(d)]);
-            } catch (e) {
-                return '';
-            }
+            return PayambarFuncs.formatTime(value);
         },
         formatStatus(msg) {
             return PayambarFuncs.formatStatus(msg);
         },
         getConversationPreview(conv) {
-            if (!conv) return '';
-            const localMessages = this.messages[conv.user_id] || [];
-            const latest = localMessages[localMessages.length - 1];
-            if (latest?.file_name) return latest.file_name;
-            if (latest?.file_url) return 'فایل';
-            if (latest?.content) return latest.content.trim();
-            if (typeof conv.last_message_preview === 'string' && conv.last_message_preview.trim()) {
-                return conv.last_message_preview.trim();
-            }
-            return '';
+            return PayambarFuncs.getConversationPreview(conv, this.messages);
         },
         shouldShowMessageStatus(msg, index) {
-            if (!msg) return false;
-            if (Number(msg.sender_id) !== Number(this.userId)) return false;
-            const list = this.messagesForCurrent || [];
-            for (let i = list.length - 1; i >= 0; i--) {
-                if (Number(list[i]?.sender_id) === Number(this.userId)) {
-                    return i === index;
-                }
-            }
-            return false;
+            return PayambarFuncs.shouldShowMessageStatus(
+                msg,
+                index,
+                this.messagesForCurrent,
+                this.userId
+            );
         },
         formatRecordingDuration(seconds) {
-            const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
-            const secs = (seconds % 60).toString().padStart(2, '0');
-            return `${mins}:${secs}`;
+            return PayambarFuncs.formatRecordingDuration(seconds);
         },
         isAudioMessage(msg) {
-            if (!msg || !msg.file_url) return false;
-            const fileName = this.getMessageFileName(msg);
-            if (fileName.startsWith('voice-')) return true;
-            const contentType = typeof msg.file_content_type === 'string' ? msg.file_content_type.toLowerCase() : '';
-            if (contentType.startsWith('audio/')) return true;
-            return (
-                fileName.endsWith('.webm') ||
-                fileName.endsWith('.ogg') ||
-                fileName.endsWith('.mp3') ||
-                fileName.endsWith('.wav') ||
-                fileName.endsWith('.m4a')
-            );
+            return PayambarFuncs.isAudioMessage(msg);
         },
         isImageMessage(msg) {
-            if (!msg || !msg.file_url) return false;
-            const contentType = typeof msg.file_content_type === 'string' ? msg.file_content_type.toLowerCase() : '';
-            if (contentType.startsWith('image/')) return true;
-            const fileName = this.getMessageFileName(msg);
-            return (
-                fileName.endsWith('.jpg') ||
-                fileName.endsWith('.jpeg') ||
-                fileName.endsWith('.png') ||
-                fileName.endsWith('.gif') ||
-                fileName.endsWith('.webp') ||
-                fileName.endsWith('.bmp') ||
-                fileName.endsWith('.svg')
-            );
+            return PayambarFuncs.isImageMessage(msg);
         },
         isVideoMessage(msg) {
-            if (!msg || !msg.file_url) return false;
-            if (this.isAudioMessage(msg)) return false;
-            const contentType = typeof msg.file_content_type === 'string' ? msg.file_content_type.toLowerCase() : '';
-            if (contentType.startsWith('video/')) return true;
-            const fileName = this.getMessageFileName(msg);
-            return (
-                fileName.endsWith('.mp4') ||
-                fileName.endsWith('.webm') ||
-                fileName.endsWith('.mov') ||
-                fileName.endsWith('.mkv') ||
-                fileName.endsWith('.m4v')
-            );
+            return PayambarFuncs.isVideoMessage(msg);
         },
         getMessageFileName(msg) {
-            const fromName = (msg?.file_name || '').toLowerCase();
-            if (fromName) return fromName;
-            try {
-                const url = String(msg?.file_url || '').split('?')[0];
-                return url.toLowerCase();
-            } catch (e) {
-                return '';
-            }
+            return PayambarFuncs.getMessageFileName(msg);
         },
         getPullBottomAllowance(el) {
             if (!el) return 12;
@@ -654,30 +575,16 @@ const app = createApp({
             this.pullToRefresh.ready = this.isNearBottom(el);
         },
         parseTimestamp(value) {
-            if (!value) return 0;
-            const ts = new Date(value).getTime();
-            return Number.isFinite(ts) ? ts : 0;
+            return PayambarFuncs.parseTimestamp(value);
         },
         getConversationLastTimestamp(conv) {
-            if (!conv) return 0;
-            const fromConversation = this.parseTimestamp(conv.last_message_at);
-            const localMessages = this.messages[conv.user_id] || [];
-            let localMax = 0;
-            for (const msg of localMessages) {
-                const ts = this.parseTimestamp(msg?.created_at);
-                if (ts > localMax) localMax = ts;
-            }
-            return Math.max(fromConversation, localMax);
+            return PayambarFuncs.getConversationLastTimestamp(conv, this.messages);
         },
         getSortedConversations() {
-            return [...this.conversations].sort((a, b) => {
-                return this.getConversationLastTimestamp(b) - this.getConversationLastTimestamp(a);
-            });
+            return PayambarFuncs.sortConversations(this.conversations, this.messages);
         },
         sortConversationsInPlace() {
-            this.conversations.sort((a, b) => {
-                return this.getConversationLastTimestamp(b) - this.getConversationLastTimestamp(a);
-            });
+            PayambarFuncs.sortConversationsInPlace(this.conversations, this.messages);
         },
         updateConversationLastMessage(userId, timestamp) {
             if (!userId || !timestamp) return;
@@ -2211,9 +2118,7 @@ const app = createApp({
             this.callTimer = setInterval(() => {
                 const now = Date.now();
                 const diff = Math.floor((now - this.callStartTime) / 1000);
-                const minutes = Math.floor(diff / 60).toString().padStart(2, '0');
-                const seconds = (diff % 60).toString().padStart(2, '0');
-                this.callDuration = `${minutes}:${seconds}`;
+                this.callDuration = PayambarFuncs.formatRecordingDuration(diff);
             }, 1000);
         },
         stopCallTimer() {
