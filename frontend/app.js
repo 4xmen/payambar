@@ -135,6 +135,7 @@ const app = createApp({
             localStream: null,
             remoteStream: null,
             peerConnection: null,
+            pendingIceCandidates: [], // queued until remote description is set
             incomingCall: null, // { sender_id, username, displayName, avatar_url, offer }
             outgoingCall: null, // { receiver_id, username, displayName, avatar_url, status }
             activeCall: null,   // { user_id, username, displayName, avatar_url }
@@ -1490,6 +1491,7 @@ const app = createApp({
                 const sender =
                     PayambarConversations.findByUserId(this.conversations, data.sender_id) ||
                     { username: 'کاربر', user_id: data.sender_id };
+                this.pendingIceCandidates = [];
                 this.incomingCall = {
                     sender_id: data.sender_id,
                     username: sender.username,
@@ -1499,15 +1501,14 @@ const app = createApp({
                 };
             } else if (data.type === 'call_answer') {
                 if (this.outgoingCall && this.outgoingCall.receiver_id === data.sender_id) {
-                    this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload.answer));
+                    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload.answer));
+                    await this.flushPendingIceCandidates();
                     this.activeCall = { ...this.outgoingCall, user_id: this.outgoingCall.receiver_id };
                     this.outgoingCall = null;
                     this.startCallTimer();
                 }
             } else if (data.type === 'ice_candidate') {
-                if (this.peerConnection) {
-                    this.peerConnection.addIceCandidate(new RTCIceCandidate(data.payload.candidate));
-                }
+                await this.handleIncomingIceCandidate(data.payload?.candidate);
             } else if (data.type === 'call_reject') {
                 if (this.outgoingCall && this.outgoingCall.receiver_id === data.sender_id) {
                     alert('تماس رد شد');
@@ -1894,6 +1895,7 @@ const app = createApp({
                 });
 
                 await this.peerConnection.setRemoteDescription(new RTCSessionDescription(this.incomingCall.offer));
+                await this.flushPendingIceCandidates();
                 const answer = await this.peerConnection.createAnswer();
                 await this.peerConnection.setLocalDescription(answer);
 
@@ -1924,6 +1926,7 @@ const app = createApp({
                 receiver_id: this.incomingCall.sender_id
             }));
             this.saveCallLogMessage(this.incomingCall.sender_id, 'تماس ناموفق');
+            this.pendingIceCandidates = [];
             this.incomingCall = null;
         },
         endCall(isInitiator = true) {
@@ -1958,10 +1961,36 @@ const app = createApp({
             const remoteAudio = document.getElementById('remote-audio');
             if (remoteAudio) remoteAudio.srcObject = null;
 
+            this.pendingIceCandidates = [];
             this.stopCallTimer();
             this.activeCall = null;
             this.outgoingCall = null;
             this.incomingCall = null;
+        },
+        async handleIncomingIceCandidate(candidate) {
+            if (!candidate) return;
+            // Queue until peer connection exists and remote description is set
+            // (callee is still ringing, or caller is still waiting for answer).
+            if (!this.peerConnection || !this.peerConnection.remoteDescription) {
+                this.pendingIceCandidates.push(candidate);
+                return;
+            }
+            try {
+                await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (err) {
+                console.error('[WebRTC] addIceCandidate failed:', err);
+            }
+        },
+        async flushPendingIceCandidates() {
+            if (!this.peerConnection || !this.peerConnection.remoteDescription) return;
+            const pending = this.pendingIceCandidates.splice(0);
+            for (const candidate of pending) {
+                try {
+                    await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (err) {
+                    console.error('[WebRTC] flush addIceCandidate failed:', err);
+                }
+            }
         },
         setupPeerConnection(otherUserId) {
             console.log('[WebRTC] Setting up peer connection with ICE servers:', this.iceServers);
