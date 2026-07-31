@@ -47,6 +47,5 @@ data/uploads/
 
 # Node modules (if frontend uses npm)
 node_modules/
-package-lock.json
 yarn.lock
 .env
