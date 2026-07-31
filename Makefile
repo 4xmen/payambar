@@ -81,7 +81,7 @@ test:
 	@echo "Coverage report:"
 	go tool cover -func=coverage.out
 	@echo "Running frontend tests..."
-	cd frontend && npm test
+	cd frontend && npm ci && npm test
 
 
 # Format code
