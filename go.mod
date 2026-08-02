@@ -12,7 +12,7 @@ require (
 	github.com/pion/logging v0.2.4
 	github.com/pion/turn/v4 v4.1.4
 	github.com/ulule/limiter/v3 v3.11.2
-	golang.org/x/crypto v0.47.0
+	golang.org/x/crypto v0.52.0
 )
 
 require (
@@ -47,8 +47,8 @@ require (
 	github.com/wlynxg/anet v0.0.5 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	golang.org/x/arch v0.23.0 // indirect
-	golang.org/x/net v0.49.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/net v0.54.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
