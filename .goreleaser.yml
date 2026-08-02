@@ -1,0 +1,45 @@
+version: 2
+
+project_name: payambar
+
+before:
+  hooks:
+    - make build-frontend
+
+builds:
+  - id: payambar
+    main: ./cmd/payambar
+    binary: payambar
+    goos:
+      - linux
+    goarch:
+      - amd64
+    env:
+      - CGO_ENABLED=1
+    flags:
+      - -trimpath
+      - -tags=nomsgpack
+    ldflags:
+      - -s -w -X main.Version={{ .Version }}
+
+archives:
+  - id: payambar
+    formats:
+      - zip
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+    files:
+      - LICENSE
+    wrap_in_directory: false
+
+checksum:
+  name_template: "{{ .ProjectName }}-checksums.txt"
+
+release:
+  prerelease: auto
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
