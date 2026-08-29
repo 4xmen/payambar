@@ -24,8 +24,11 @@ vendor/
 .vscode/
 *.swp
 *.swo
-*~
 .DS_Store
+
+# Agents & Skills
+.agents/
+skills-lock.json
 
 # Build artifacts
 bin/
