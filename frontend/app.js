@@ -645,6 +645,7 @@ const app = createApp({
             // Ensure device key is registered as soon as the user is authenticated
             this.ensureE2EEReady().catch((err) => console.warn('E2EE init after auth failed', err));
             this.connectWebSocket();
+            this.fetchWebRTCConfig();
         },
         resetE2EEState() {
             this.e2ee.ready = false;
@@ -1493,30 +1494,43 @@ const app = createApp({
                     { username: 'کاربر', user_id: data.sender_id };
                 this.pendingIceCandidates = [];
                 this.incomingCall = {
-                    sender_id: data.sender_id,
+                    sender_id: Number(data.sender_id),
                     username: sender.username,
                     displayName: sender.display_name,
                     avatar_url: sender.avatar_url,
                     offer: data.payload.offer
                 };
             } else if (data.type === 'call_answer') {
-                if (this.outgoingCall && this.outgoingCall.receiver_id === data.sender_id) {
-                    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload.answer));
-                    await this.flushPendingIceCandidates();
-                    this.activeCall = { ...this.outgoingCall, user_id: this.outgoingCall.receiver_id };
-                    this.outgoingCall = null;
-                    this.startCallTimer();
+                console.log('[WebRTC] Received call_answer from:', data.sender_id, 'outgoingCall:', this.outgoingCall);
+                if (this.outgoingCall && Number(this.outgoingCall.receiver_id) === Number(data.sender_id)) {
+                    try {
+                        console.log('[WebRTC] Setting remote description from answer...');
+                        await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.payload.answer));
+                        console.log('[WebRTC] Flushing pending ICE candidates...');
+                        await this.flushPendingIceCandidates();
+                        this.activeCall = { ...this.outgoingCall, user_id: Number(this.outgoingCall.receiver_id) };
+                        this.outgoingCall = null;
+                        this.startCallTimer();
+                        console.log('[WebRTC] Call is now active!');
+                    } catch (err) {
+                        console.error('[WebRTC] Error handling call_answer:', err);
+                    }
+                } else {
+                    console.warn('[WebRTC] Received call_answer but outgoingCall did not match:', {
+                        outgoingCall: this.outgoingCall,
+                        senderId: data.sender_id
+                    });
                 }
             } else if (data.type === 'ice_candidate') {
                 await this.handleIncomingIceCandidate(data.payload?.candidate);
             } else if (data.type === 'call_reject') {
-                if (this.outgoingCall && this.outgoingCall.receiver_id === data.sender_id) {
+                if (this.outgoingCall && Number(this.outgoingCall.receiver_id) === Number(data.sender_id)) {
                     alert('تماس رد شد');
                     this.endCall(false);
                 }
             } else if (data.type === 'call_hangup') {
-                if ((this.activeCall && this.activeCall.user_id === data.sender_id) ||
-                    (this.incomingCall && this.incomingCall.sender_id === data.sender_id)) {
+                if ((this.activeCall && Number(this.activeCall.user_id) === Number(data.sender_id)) ||
+                    (this.incomingCall && Number(this.incomingCall.sender_id) === Number(data.sender_id))) {
                     this.endCall(false);
                 }
             } else if (data.type === 'message') {
@@ -1847,9 +1861,9 @@ const app = createApp({
         // WebRTC Call Methods
         async startCall() {
             if (this.activeCall || this.outgoingCall || this.incomingCall) return;
-            if (this.currentConversationId === this.userId) return;
+            if (Number(this.currentConversationId) === Number(this.userId)) return;
 
-            const receiverId = this.currentConversationId;
+            const receiverId = Number(this.currentConversationId);
             const username = this.currentConversationUsername;
             const displayName = this.currentConversationDisplayName;
             const avatarUrl = this.currentConversationAvatarUrl;
@@ -1882,7 +1896,7 @@ const app = createApp({
         },
         async acceptCall() {
             if (!this.incomingCall) return;
-            const senderId = this.incomingCall.sender_id;
+            const senderId = Number(this.incomingCall.sender_id);
 
             try {
                 console.log('[WebRTC] acceptCall: Getting user media...');
@@ -1923,7 +1937,7 @@ const app = createApp({
             if (!this.incomingCall) return;
             this.ws.send(JSON.stringify({
                 type: 'call_reject',
-                receiver_id: this.incomingCall.sender_id
+                receiver_id: Number(this.incomingCall.sender_id)
             }));
             this.saveCallLogMessage(this.incomingCall.sender_id, 'تماس ناموفق');
             this.pendingIceCandidates = [];
@@ -1934,7 +1948,7 @@ const app = createApp({
                 if (isInitiator) {
                     this.ws.send(JSON.stringify({
                         type: 'call_hangup',
-                        receiver_id: this.activeCall.user_id
+                        receiver_id: Number(this.activeCall.user_id)
                     }));
                     const duration = this.callDuration ? ` (${this.callDuration})` : '';
                     this.saveCallLogMessage(this.activeCall.user_id, `تماس صوتی${duration}`);
@@ -1943,7 +1957,7 @@ const app = createApp({
                 if (isInitiator) {
                     this.ws.send(JSON.stringify({
                         type: 'call_hangup',
-                        receiver_id: this.outgoingCall.receiver_id
+                        receiver_id: Number(this.outgoingCall.receiver_id)
                     }));
                     this.saveCallLogMessage(this.outgoingCall.receiver_id, 'تماس ناموفق');
                 }
@@ -2017,12 +2031,13 @@ const app = createApp({
 
             this.peerConnection.ontrack = (event) => {
                 console.log('[WebRTC] Received remote track:', event.track.kind, event.track.enabled);
-                this.remoteStream = event.streams[0];
+                this.remoteStream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
                 let remoteAudio = document.getElementById('remote-audio');
                 if (!remoteAudio) {
                     remoteAudio = document.createElement('audio');
                     remoteAudio.id = 'remote-audio';
                     remoteAudio.autoplay = true;
+                    remoteAudio.playsInline = true;
                     document.body.appendChild(remoteAudio);
                 }
                 remoteAudio.srcObject = this.remoteStream;
