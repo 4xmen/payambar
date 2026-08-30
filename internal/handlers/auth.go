@@ -67,16 +67,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authSvc.Login(req.Username, req.Password)
+	token, userID, err := h.authSvc.Login(req.Username, req.Password)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": __(err.Error())})
-		return
-	}
-
-	// Get user ID
-	userID, err := h.authSvc.GetUserByUsername(req.Username)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to get user")})
 		return
 	}
 

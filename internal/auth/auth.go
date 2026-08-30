@@ -29,6 +29,8 @@ func New(db *sql.DB, jwtSecret string) *Service {
 	}
 }
 
+var validUsernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+
 func (s *Service) Register(username, password string) (int, error) {
 	// Validate inputs
 	username = strings.TrimSpace(username)
@@ -37,7 +39,7 @@ func (s *Service) Register(username, password string) (int, error) {
 	}
 
 	// Username can only contain alphanumeric and underscore
-	if !regexp.MustCompile(`^[a-zA-Z0-9_]+$`).MatchString(username) {
+	if !validUsernamePattern.MatchString(username) {
 		return 0, fmt.Errorf("username can only contain letters, numbers, and underscores")
 	}
 
@@ -72,7 +74,7 @@ func (s *Service) Register(username, password string) (int, error) {
 	return int(id), nil
 }
 
-func (s *Service) Login(username, password string) (string, error) {
+func (s *Service) Login(username, password string) (string, int, error) {
 	username = strings.TrimSpace(username)
 
 	// Get user by username
@@ -86,23 +88,23 @@ func (s *Service) Login(username, password string) (string, error) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", fmt.Errorf("invalid username or password")
+			return "", 0, fmt.Errorf("invalid username or password")
 		}
-		return "", fmt.Errorf("Db query error: %v", err)
+		return "", 0, fmt.Errorf("Db query error: %v", err)
 	}
 
 	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
-		return "", fmt.Errorf("invalid username or password")
+		return "", 0, fmt.Errorf("invalid username or password")
 	}
 
 	// Generate JWT token
 	token, err := s.GenerateToken(userID, username)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate token: %w", err)
+		return "", 0, fmt.Errorf("failed to generate token: %w", err)
 	}
 
-	return token, nil
+	return token, userID, nil
 }
 
 func (s *Service) GenerateToken(userID int, username string) (string, error) {

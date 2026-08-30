@@ -43,7 +43,7 @@ func Load() *Config {
 		JWTSecret:          getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
 		CORSOrigins:        getEnv("CORS_ORIGINS", "*"),
 		TrustedProxies:     strings.Split(getEnv("TRUSTED_PROXIES", ""), ","),
-		MaxUploadSize:      parseInt64(getEnv("MAX_UPLOAD_SIZE", "10485760")), // 10MB default
+		MaxUploadSize:      parseInt64(getEnv("MAX_UPLOAD_SIZE", "10485760"), 10485760), // 10MB default
 		FileStoragePath:    getEnv("FILE_STORAGE_PATH", "./data/uploads"),
 		StunServers:        getEnv("STUN_SERVERS", "stun:stun.l.google.com:19302"),
 		TurnEnabled:        parseBool(getEnv("TURN_ENABLED", "false")),
@@ -70,26 +70,21 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-func parseInt64(s string) int64 {
-	val, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return 10485760 // 10MB default
+func parseInt64(s string, fallback int64) int64 {
+	if val, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return val
 	}
-	return val
+	return fallback
 }
 
 func parseBool(s string) bool {
-	val, err := strconv.ParseBool(s)
-	if err != nil {
-		return false
-	}
+	val, _ := strconv.ParseBool(s)
 	return val
 }
 
 func parseUint16(s string, fallback uint16) uint16 {
-	val, err := strconv.ParseUint(s, 10, 16)
-	if err != nil {
-		return fallback
+	if val, err := strconv.ParseUint(s, 10, 16); err == nil {
+		return uint16(val)
 	}
-	return uint16(val)
+	return fallback
 }
