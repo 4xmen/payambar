@@ -50,7 +50,7 @@ const emit = defineEmits<{
 
     <!-- Conversations List -->
     <div class="conversations-list">
-      <div v-if="loadingConversations" class="conversation-skeleton-list">
+      <div v-if="loadingConversations && filteredConversations.length === 0" class="conversation-skeleton-list">
         <div
           v-for="n in 6"
           :key="'skeleton-' + n"
@@ -70,7 +70,7 @@ const emit = defineEmits<{
       <ConversationItem
         v-else
         v-for="conv in filteredConversations"
-        :key="conv.id"
+        :key="conv.user_id"
         :conversation="conv"
         :is-active="conv.user_id === currentConversationId"
         :messages-by-user="messagesByUser"

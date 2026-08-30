@@ -56,12 +56,53 @@ export function useConversations() {
     }
   }
 
+function reconcileConversations(
+  current: Conversation[],
+  incoming: Conversation[],
+  messagesByUser?: Record<number, Message[]>
+): void {
+  const incomingMap = new Map<number, Conversation>();
+  for (const item of incoming) {
+    incomingMap.set(Number(item.user_id), item);
+  }
+
+  // 1. Remove deleted conversations
+  for (let i = current.length - 1; i >= 0; i--) {
+    const uid = Number(current[i].user_id);
+    if (!incomingMap.has(uid)) {
+      current.splice(i, 1);
+    }
+  }
+
+  // 2. Update existing in-place or add new
+  for (const item of incoming) {
+    const uid = Number(item.user_id);
+    const existing = current.find((c) => Number(c.user_id) === uid);
+    if (existing) {
+      if (existing.id !== item.id) existing.id = item.id;
+      if (existing.username !== item.username) existing.username = item.username;
+      if (existing.display_name !== item.display_name) existing.display_name = item.display_name;
+      if (existing.avatar_url !== item.avatar_url) existing.avatar_url = item.avatar_url;
+      if (existing.is_online !== item.is_online) existing.is_online = item.is_online;
+      if (existing.unread_count !== item.unread_count) existing.unread_count = item.unread_count;
+      if (existing.last_message_at !== item.last_message_at) existing.last_message_at = item.last_message_at;
+      if (existing.last_message_preview !== item.last_message_preview) existing.last_message_preview = item.last_message_preview;
+    } else {
+      current.push(item);
+    }
+  }
+
+  sortConversationsInPlace(current, messagesByUser);
+}
+
   async function loadConversationsList(
     token: string,
     messagesByUser?: Record<number, Message[]>
   ): Promise<boolean> {
     if (!token) return false;
-    loadingConversations.value = true;
+    if (conversations.value.length === 0) {
+      loadingConversations.value = true;
+    }
     try {
       const res = await fetchConversations(API_URL, token);
       if (!res.ok) {
@@ -71,8 +112,8 @@ export function useConversations() {
         return false;
       }
       const data = await res.json();
-      conversations.value = data.conversations || [];
-      sortList(messagesByUser);
+      const incoming: Conversation[] = data.conversations || [];
+      reconcileConversations(conversations.value, incoming, messagesByUser);
       return true;
     } catch (err) {
       console.error('Failed to load conversations:', err);
