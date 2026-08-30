@@ -13,13 +13,22 @@ const PRECACHE_URLS = [
   '/fonts/vazirmatn-latin.woff2',
 ];
 
-// ── Install: precache shell assets ──────────────────────────────────────────
+// ── Install: precache shell assets safely ───────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_URLS).catch(() => {
-        console.warn('Some resources could not be cached');
-      });
+    caches.open(CACHE_NAME).then(async (cache) => {
+      await Promise.allSettled(
+        PRECACHE_URLS.map(async (url) => {
+          try {
+            const response = await fetch(url, { cache: 'reload' });
+            if (response.ok) {
+              await cache.put(url, response);
+            }
+          } catch {
+            // Ignore non-critical pre-cache fetch failures
+          }
+        })
+      );
     })
   );
   self.skipWaiting();
@@ -52,6 +61,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
+  // SPA navigation requests
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
@@ -59,13 +69,17 @@ self.addEventListener('fetch', (event) => {
           if (response && response.status === 200) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
-              cache.put('/', clone.clone());
-              cache.put('/index.html', clone);
+              cache.put('/', clone.clone()).catch(() => {});
+              cache.put('/index.html', clone).catch(() => {});
             });
           }
           return response;
         })
-        .catch(() => caches.match('/index.html').then((cached) => cached || caches.match('/')))
+        .catch(() => {
+          return caches.match('/index.html').then((cached) => {
+            return cached || caches.match('/') || Response.error();
+          });
+        })
     );
     return;
   }
@@ -77,27 +91,34 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           if (response && response.status === 200) {
             const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, clone).catch(() => {});
+            });
           }
           return response;
         })
-        .catch(() => caches.match(event.request))
+        .catch(() => caches.match(event.request).then((cached) => cached || Response.error()))
     );
     return;
   }
 
-  // Shell & Static assets: stale-while-revalidate
+  // Shell & Static assets: stale-while-revalidate with safe catch handler
   event.respondWith(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.match(event.request).then((cached) => {
-        const networkFetch = fetch(event.request).then((response) => {
+    caches.open(CACHE_NAME).then(async (cache) => {
+      const cached = await cache.match(event.request);
+      const networkPromise = fetch(event.request)
+        .then((response) => {
           if (response && response.status === 200 && response.type !== 'error') {
-            cache.put(event.request, response.clone());
+            cache.put(event.request, response.clone()).catch(() => {});
           }
           return response;
+        })
+        .catch(() => {
+          // If network fetch fails in background, return cached or fallback
+          return cached || Response.error();
         });
-        return cached || networkFetch;
-      });
+
+      return cached || networkPromise;
     })
   );
 });
@@ -109,7 +130,7 @@ self.addEventListener('push', (event) => {
   let payload;
   try {
     payload = event.data.json();
-  } catch (e) {
+  } catch {
     payload = { title: 'پیام جدید', body: event.data.text() || 'پیام جدید دارید' };
   }
 

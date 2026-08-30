@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Conversation, Message, SearchUser } from './types';
-import { API_URL, WS_URL } from './services/api';
+import { API_URL, setUnauthorizedHandler, WS_URL } from './services/api';
 import { canConnect, createConnection, reconnectDelay, shouldReconnect } from './services/ws';
 import { updateMessageStatus } from './services/funcs';
 import { applyIncomingMessage, unreadIncomingIds } from './services/messages';
@@ -550,29 +550,36 @@ function onGlobalClick() {
   convs.closeConversationMenu();
 }
 
+let isAuthenticating = false;
+
 async function onAuthenticated() {
-  if (!auth.token.value || !auth.userId.value) return;
+  if (!auth.token.value || !auth.userId.value || isAuthenticating) return;
+  isAuthenticating = true;
 
-  // 1. Connect WebSocket right away so status updates immediately
-  connectWebSocket();
+  try {
+    // 1. Connect WebSocket right away so status updates immediately
+    connectWebSocket();
 
-  // 2. Load conversations and profile in parallel
-  await Promise.allSettled([
-    convs.loadConversationsList(auth.token.value, msgs.messages),
-    auth.loadMyProfile(),
-    call.loadWebRTCConfig(auth.token.value),
-  ]);
+    // 2. Load conversations and profile in parallel
+    await Promise.allSettled([
+      convs.loadConversationsList(auth.token.value, msgs.messages),
+      auth.loadMyProfile(),
+      call.loadWebRTCConfig(auth.token.value),
+    ]);
 
-  // 3. Initialize E2EE in the background
-  e2ee
-    .ensureE2EEReady(
-      auth.token.value,
-      auth.userId.value,
-      auth.authPassword.value
-    )
-    .catch((err) => {
-      console.warn('E2EE init error:', err);
-    });
+    // 3. Initialize E2EE in the background
+    e2ee
+      .ensureE2EEReady(
+        auth.token.value,
+        auth.userId.value,
+        auth.authPassword.value
+      )
+      .catch((err) => {
+        console.warn('E2EE init error:', err);
+      });
+  } finally {
+    isAuthenticating = false;
+  }
 }
 
 watch(
@@ -658,12 +665,12 @@ function closeNewChatModal() {
 
 // Lifecycle Hooks
 onMounted(async () => {
+  setUnauthorizedHandler(onLogout);
   window.addEventListener('click', onGlobalClick);
   window.addEventListener('popstate', handlePopState);
   await fetchAppVersion();
-  const session = auth.initAuth();
 
-  if (session) {
+  if (auth.isAuthed.value) {
     await onAuthenticated();
   }
 
@@ -689,6 +696,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  setUnauthorizedHandler(null);
   window.removeEventListener('click', onGlobalClick);
   window.removeEventListener('popstate', handlePopState);
   msgs.cleanupVoiceRecorder();

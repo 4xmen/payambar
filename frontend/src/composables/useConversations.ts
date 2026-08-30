@@ -1,6 +1,6 @@
 import { computed, reactive, ref } from 'vue';
 import type { Conversation, Message } from '../types';
-import { API_URL } from '../services/api';
+import { API_URL, handleUnauthorized } from '../services/api';
 import {
   clearUnreadCount,
   createConversation,
@@ -63,6 +63,9 @@ export function useConversations() {
     try {
       const res = await fetchConversations(API_URL, token);
       if (!res.ok) {
+        if (res.status === 401) {
+          handleUnauthorized();
+        }
         return false;
       }
       const data = await res.json();

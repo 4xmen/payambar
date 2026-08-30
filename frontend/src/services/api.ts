@@ -7,3 +7,16 @@ export const WS_URL = (isBrowser && window.WS_URL) || `${origin.replace(/^http/,
 export function authHeaders(token: string | null): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
+
+type UnauthorizedHandler = () => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(fn: UnauthorizedHandler | null): void {
+  unauthorizedHandler = fn;
+}
+
+export function handleUnauthorized(): void {
+  if (unauthorizedHandler) {
+    unauthorizedHandler();
+  }
+}

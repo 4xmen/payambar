@@ -10,10 +10,12 @@ import {
   validateRegister,
 } from '../services/auth';
 
-const token = ref<string | null>(null);
-const userId = ref<number | null>(null);
-const username = ref<string | null>(null);
-const profileDisplayName = ref<string>('');
+const initialSession = typeof window !== 'undefined' ? loadStoredSession() : null;
+
+const token = ref<string | null>(initialSession?.token || null);
+const userId = ref<number | null>(initialSession?.userId || null);
+const username = ref<string | null>(initialSession?.username || null);
+const profileDisplayName = ref<string>(initialSession?.displayName || '');
 const myAvatarUrl = ref<string | null>(null);
 const authPassword = ref<string>('');
 const suppressBackupWarningOnce = ref<boolean>(false);
@@ -126,6 +128,10 @@ export function useAuth() {
       const res = await fetch(`${API_URL}/profile`, {
         headers: authHeaders(token.value),
       });
+      if (res.status === 401) {
+        clearAuth();
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         profileDisplayName.value = data.display_name || '';

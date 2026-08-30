@@ -1,6 +1,6 @@
 import { reactive, ref } from 'vue';
 import type { Message, PullToRefreshState } from '../types';
-import { API_URL, authHeaders } from '../services/api';
+import { API_URL, authHeaders, handleUnauthorized } from '../services/api';
 import {
   buildOfflineFileMessage,
   buildOptimisticTextMessage,
@@ -65,6 +65,9 @@ export function useMessages() {
         limit: 50,
       });
       if (!res.ok) {
+        if (res.status === 401) {
+          handleUnauthorized();
+        }
         messages[convUserId] = [];
         return [];
       }
@@ -100,7 +103,12 @@ export function useMessages() {
         limit: 50,
         offset,
       });
-      if (!res.ok) return [];
+      if (!res.ok) {
+        if (res.status === 401) {
+          handleUnauthorized();
+        }
+        return [];
+      }
 
       const data = await res.json();
       const rawMessages: Message[] = data.messages || [];
