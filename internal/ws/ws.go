@@ -25,6 +25,7 @@ type Hub struct {
 // PushNotifier sends push notifications to offline users.
 type PushNotifier interface {
 	SendNewMessageNotification(receiverID int, senderUsername string)
+	SendIncomingCallNotification(receiverID int, senderUsername string, callerID int)
 }
 
 type Client struct {
@@ -196,15 +197,26 @@ func (h *Hub) broadcast_message(message interface{}) {
 			}
 			h.mu.RUnlock()
 		} else {
-			// WebRTC signaling - forward only to receiver
+			// WebRTC signaling - forward to receiver if online
 			h.mu.RLock()
-			if client, ok := h.clients[msg.ReceiverID]; ok {
+			client, receiverOnline := h.clients[msg.ReceiverID]
+			if receiverOnline {
 				select {
 				case client.send <- msg:
 				default:
 				}
 			}
 			h.mu.RUnlock()
+
+			// If receiver is offline and it's a call offer, send incoming call push notification
+			if msg.Type == "call_offer" && !receiverOnline && h.pushNotifier != nil {
+				var senderUsername string
+				h.db.QueryRow("SELECT username FROM users WHERE id = ?", msg.SenderID).Scan(&senderUsername)
+				if senderUsername == "" {
+					senderUsername = "someone"
+				}
+				go h.pushNotifier.SendIncomingCallNotification(msg.ReceiverID, senderUsername, msg.SenderID)
+			}
 		}
 	}
 }

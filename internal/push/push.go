@@ -3,6 +3,7 @@ package push
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -41,9 +42,12 @@ func (n *Notifier) VAPIDPublicKey() string {
 
 // payload is the JSON structure sent inside the push notification.
 type payload struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	URL   string `json:"url"`
+	Type           string `json:"type,omitempty"`
+	Title          string `json:"title"`
+	Body           string `json:"body"`
+	URL            string `json:"url"`
+	CallerID       int    `json:"caller_id,omitempty"`
+	CallerUsername string `json:"caller_username,omitempty"`
 }
 
 // SendNewMessageNotification sends a push notification to all subscriptions of receiverID.
@@ -63,6 +67,7 @@ func (n *Notifier) SendNewMessageNotification(receiverID int, senderUsername str
 	defer rows.Close()
 
 	p := payload{
+		Type:  "message",
 		Title: "پیام جدید",
 		Body:  "پیام جدید از " + senderUsername,
 		URL:   "/",
@@ -86,11 +91,58 @@ func (n *Notifier) SendNewMessageNotification(receiverID int, senderUsername str
 
 	log.Printf("push: sending notification to %d subscription(s) for user %d", len(subs), receiverID)
 	for _, sub := range subs {
-		go n.sendToSubscription(sub, data)
+		go n.sendToSubscriptionWithOptions(sub, data, 86400, webpush.UrgencyNormal)
 	}
 }
 
-func (n *Notifier) sendToSubscription(sub Subscription, data []byte) {
+// SendIncomingCallNotification sends an urgent push notification for an incoming call.
+func (n *Notifier) SendIncomingCallNotification(receiverID int, callerUsername string, callerID int) {
+	if n == nil {
+		return
+	}
+
+	rows, err := n.db.Query(
+		"SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND revoked_at IS NULL",
+		receiverID,
+	)
+	if err != nil {
+		log.Printf("push: failed to query subscriptions for user %d: %v", receiverID, err)
+		return
+	}
+	defer rows.Close()
+
+	p := payload{
+		Type:           "incoming_call",
+		Title:          "📞 تماس صوتی ورودی",
+		Body:           "تماس از طرف " + callerUsername,
+		CallerUsername: callerUsername,
+		CallerID:       callerID,
+		URL:            fmt.Sprintf("/?call_from=%d", callerID),
+	}
+	data, _ := json.Marshal(p)
+
+	var subs []Subscription
+	for rows.Next() {
+		var sub Subscription
+		if err := rows.Scan(&sub.Endpoint, &sub.KeyP256dh, &sub.KeyAuth); err != nil {
+			continue
+		}
+		subs = append(subs, sub)
+	}
+	rows.Close()
+
+	if len(subs) == 0 {
+		log.Printf("push: no active subscriptions for user %d", receiverID)
+		return
+	}
+
+	log.Printf("push: sending incoming call notification to %d subscription(s) for user %d", len(subs), receiverID)
+	for _, sub := range subs {
+		go n.sendToSubscriptionWithOptions(sub, data, 45, webpush.UrgencyHigh)
+	}
+}
+
+func (n *Notifier) sendToSubscriptionWithOptions(sub Subscription, data []byte, ttl int, urgency webpush.Urgency) {
 	s := &webpush.Subscription{
 		Endpoint: sub.Endpoint,
 		Keys: webpush.Keys{
@@ -103,7 +155,8 @@ func (n *Notifier) sendToSubscription(sub Subscription, data []byte) {
 		VAPIDPublicKey:  n.vapidPublicKey,
 		VAPIDPrivateKey: n.vapidPrivateKey,
 		Subscriber:      "mailto:push@payambar.local",
-		TTL:             86400,
+		TTL:             ttl,
+		Urgency:         urgency,
 	})
 	if err != nil {
 		log.Printf("error: push failed to send: %v", err)

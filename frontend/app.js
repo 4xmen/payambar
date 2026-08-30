@@ -941,6 +941,19 @@ const app = createApp({
                 this.conversations = data.conversations || [];
                 this.sortConversationsInPlace();
                 this.hydrateEncryptedConversationPreviews();
+
+                // Check if opened from an incoming call notification URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const callFrom = urlParams.get('call_from');
+                if (callFrom && !this.currentConversationId) {
+                    const targetConv = PayambarConversations.findByUserId(this.conversations, Number(callFrom));
+                    if (targetConv) {
+                        this.selectConversation(targetConv);
+                    }
+                    try {
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                    } catch (e) {}
+                }
             } catch (err) {
                 console.error(err);
                 this.serverOffline = true;
@@ -1506,6 +1519,26 @@ const app = createApp({
                     avatar_url: sender.avatar_url,
                     offer: data.payload.offer
                 };
+                // Show notification if app is in background or screen off
+                if (document.visibilityState === 'hidden' && 'Notification' in window && Notification.permission === 'granted') {
+                    if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+                        navigator.serviceWorker.ready.then(reg => {
+                            reg.showNotification('📞 تماس صوتی ورودی', {
+                                body: `تماس از طرف ${sender.display_name || sender.username}`,
+                                icon: '/favicon-192.png',
+                                badge: '/favicon-96.png',
+                                tag: `incoming-call-${data.sender_id}`,
+                                requireInteraction: true,
+                                vibrate: [300, 200, 300, 200, 500, 200, 500],
+                                data: { url: `/?call_from=${data.sender_id}`, type: 'incoming_call', caller_id: data.sender_id },
+                                actions: [
+                                    { action: 'answer', title: '📞 پاسخ' },
+                                    { action: 'decline', title: '✖ رد' }
+                                ]
+                            });
+                        }).catch(() => {});
+                    }
+                }
             } else if (data.type === 'call_answer') {
                 console.log('[WebRTC] Received call_answer from:', data.sender_id, 'outgoingCall:', this.outgoingCall);
                 if (this.outgoingCall && Number(this.outgoingCall.receiver_id) === Number(data.sender_id)) {
@@ -1519,6 +1552,7 @@ const app = createApp({
                         this.startCallTimer();
                         this.acquireWakeLock();
                         this.setupMediaSession(this.activeCall.displayName || this.activeCall.username);
+                        this.dismissCallNotification();
                         console.log('[WebRTC] Call is now active!');
                     } catch (err) {
                         console.error('[WebRTC] Error handling call_answer:', err);
@@ -1532,11 +1566,13 @@ const app = createApp({
             } else if (data.type === 'ice_candidate') {
                 await this.handleIncomingIceCandidate(data.payload?.candidate);
             } else if (data.type === 'call_reject') {
+                this.dismissCallNotification();
                 if (this.outgoingCall && Number(this.outgoingCall.receiver_id) === Number(data.sender_id)) {
                     alert('تماس رد شد');
                     this.endCall(false);
                 }
             } else if (data.type === 'call_hangup') {
+                this.dismissCallNotification();
                 if ((this.activeCall && Number(this.activeCall.user_id) === Number(data.sender_id)) ||
                     (this.incomingCall && Number(this.incomingCall.sender_id) === Number(data.sender_id))) {
                     this.endCall(false);
@@ -1944,6 +1980,7 @@ const app = createApp({
                     avatar_url: this.incomingCall.avatar_url
                 };
                 this.setupMediaSession(this.activeCall.displayName || this.activeCall.username);
+                this.dismissCallNotification();
                 this.incomingCall = null;
                 this.startCallTimer();
             } catch (err) {
@@ -1953,6 +1990,7 @@ const app = createApp({
             }
         },
         rejectCall() {
+            this.dismissCallNotification();
             if (!this.incomingCall) return;
             this.ws.send(JSON.stringify({
                 type: 'call_reject',
@@ -1965,6 +2003,7 @@ const app = createApp({
         endCall(isInitiator = true) {
             this.releaseWakeLock();
             this.cleanupMediaSession();
+            this.dismissCallNotification();
 
             if (this.activeCall) {
                 if (isInitiator) {
@@ -2138,6 +2177,19 @@ const app = createApp({
                 try {
                     navigator.mediaSession.playbackState = 'none';
                 } catch (e) {}
+            }
+        },
+        dismissCallNotification() {
+            if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+                navigator.serviceWorker.ready.then(reg => {
+                    reg.getNotifications().then(notifications => {
+                        notifications.forEach(n => {
+                            if (n.tag && n.tag.startsWith('incoming-call')) {
+                                n.close();
+                            }
+                        });
+                    }).catch(() => {});
+                }).catch(() => {});
             }
         },
     },

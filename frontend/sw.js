@@ -127,14 +127,29 @@ self.addEventListener('push', (event) => {
     payload = { title: 'پیام جدید', body: event.data.text() || 'پیام جدید دارید' };
   }
 
-  const title = payload.title || 'پیام جدید';
+  const isCall = payload.type === 'incoming_call';
+  const title = payload.title || (isCall ? '📞 تماس صوتی ورودی' : 'پیام جدید');
+  const callerName = payload.caller_username || payload.body || 'تماس صوتی';
+
   const options = {
-    body: payload.body || 'پیام جدید دارید',
+    body: isCall ? `تماس از طرف ${callerName}` : (payload.body || 'پیام جدید دارید'),
     icon: '/favicon-192.png',
     badge: '/favicon-96.png',
-    data: { url: payload.url || '/' },
-    tag: 'new-message',
+    data: {
+      url: payload.url || (isCall ? `/?call_from=${payload.caller_id || ''}` : '/'),
+      type: payload.type || 'message',
+      caller_id: payload.caller_id,
+    },
+    tag: isCall ? `incoming-call-${payload.caller_id || 'active'}` : 'new-message',
     renotify: true,
+    requireInteraction: isCall,
+    vibrate: isCall ? [300, 200, 300, 200, 500, 200, 500] : [100, 50, 100],
+    actions: isCall
+      ? [
+          { action: 'answer', title: '📞 پاسخ' },
+          { action: 'decline', title: '✖ رد' },
+        ]
+      : [],
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -144,6 +159,10 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
+  if (event.action === 'decline') {
+    return;
+  }
+
   const url = event.notification.data?.url || '/';
 
   event.waitUntil(
@@ -151,6 +170,9 @@ self.addEventListener('notificationclick', (event) => {
       // Focus an existing window if available
       for (const client of windowClients) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
+          if ('navigate' in client && url !== '/') {
+            client.navigate(url);
+          }
           return client.focus();
         }
       }

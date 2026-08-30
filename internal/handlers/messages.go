@@ -44,6 +44,7 @@ type MessageBroadcaster interface {
 // PushNotifier sends push notifications to offline users
 type PushNotifier interface {
 	SendNewMessageNotification(receiverID int, senderUsername string)
+	SendIncomingCallNotification(receiverID int, senderUsername string, callerID int)
 	VAPIDPublicKey() string
 }
 
