@@ -2179,18 +2179,12 @@ const app = createApp({
                 } catch (e) {}
             }
         },
-        dismissCallNotification() {
-            if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-                navigator.serviceWorker.ready.then(reg => {
-                    reg.getNotifications().then(notifications => {
-                        notifications.forEach(n => {
-                            if (n.tag && n.tag.startsWith('incoming-call')) {
-                                n.close();
-                            }
-                        });
-                    }).catch(() => {});
-                }).catch(() => {});
-            }
+        async dismissCallNotification() {
+            try {
+                const reg = await navigator.serviceWorker?.ready;
+                const notifications = await reg?.getNotifications();
+                notifications?.forEach(n => n.tag?.startsWith('incoming-call') && n.close());
+            } catch (e) {}
         },
     },
 });

@@ -52,93 +52,57 @@ type payload struct {
 
 // SendNewMessageNotification sends a push notification to all subscriptions of receiverID.
 func (n *Notifier) SendNewMessageNotification(receiverID int, senderUsername string) {
-	if n == nil {
-		return
-	}
-
-	rows, err := n.db.Query(
-		"SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND revoked_at IS NULL",
-		receiverID,
-	)
-	if err != nil {
-		log.Printf("push: failed to query subscriptions for user %d: %v", receiverID, err)
-		return
-	}
-	defer rows.Close()
-
-	p := payload{
+	n.sendToUser(receiverID, payload{
 		Type:  "message",
 		Title: "پیام جدید",
 		Body:  "پیام جدید از " + senderUsername,
 		URL:   "/",
-	}
-	data, _ := json.Marshal(p)
-
-	var subs []Subscription
-	for rows.Next() {
-		var sub Subscription
-		if err := rows.Scan(&sub.Endpoint, &sub.KeyP256dh, &sub.KeyAuth); err != nil {
-			continue
-		}
-		subs = append(subs, sub)
-	}
-	rows.Close()
-
-	if len(subs) == 0 {
-		log.Printf("push: no active subscriptions for user %d", receiverID)
-		return
-	}
-
-	log.Printf("push: sending notification to %d subscription(s) for user %d", len(subs), receiverID)
-	for _, sub := range subs {
-		go n.sendToSubscriptionWithOptions(sub, data, 86400, webpush.UrgencyNormal)
-	}
+	}, 86400, webpush.UrgencyNormal)
 }
 
 // SendIncomingCallNotification sends an urgent push notification for an incoming call.
 func (n *Notifier) SendIncomingCallNotification(receiverID int, callerUsername string, callerID int) {
-	if n == nil {
-		return
-	}
-
-	rows, err := n.db.Query(
-		"SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND revoked_at IS NULL",
-		receiverID,
-	)
-	if err != nil {
-		log.Printf("push: failed to query subscriptions for user %d: %v", receiverID, err)
-		return
-	}
-	defer rows.Close()
-
-	p := payload{
+	n.sendToUser(receiverID, payload{
 		Type:           "incoming_call",
 		Title:          "📞 تماس صوتی ورودی",
 		Body:           "تماس از طرف " + callerUsername,
 		CallerUsername: callerUsername,
 		CallerID:       callerID,
 		URL:            fmt.Sprintf("/?call_from=%d", callerID),
-	}
-	data, _ := json.Marshal(p)
+	}, 45, webpush.UrgencyHigh)
+}
 
-	var subs []Subscription
-	for rows.Next() {
-		var sub Subscription
-		if err := rows.Scan(&sub.Endpoint, &sub.KeyP256dh, &sub.KeyAuth); err != nil {
-			continue
-		}
-		subs = append(subs, sub)
-	}
-	rows.Close()
-
-	if len(subs) == 0 {
-		log.Printf("push: no active subscriptions for user %d", receiverID)
+func (n *Notifier) sendToUser(receiverID int, p payload, ttl int, urgency webpush.Urgency) {
+	if n == nil {
 		return
 	}
 
-	log.Printf("push: sending incoming call notification to %d subscription(s) for user %d", len(subs), receiverID)
+	rows, err := n.db.Query(
+		"SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? AND revoked_at IS NULL",
+		receiverID,
+	)
+	if err != nil {
+		log.Printf("push: failed to query subscriptions for user %d: %v", receiverID, err)
+		return
+	}
+	defer rows.Close()
+
+	data, _ := json.Marshal(p)
+	var subs []Subscription
+	for rows.Next() {
+		var sub Subscription
+		if err := rows.Scan(&sub.Endpoint, &sub.KeyP256dh, &sub.KeyAuth); err == nil {
+			subs = append(subs, sub)
+		}
+	}
+
+	if len(subs) == 0 {
+		return
+	}
+
+	log.Printf("push: sending %s notification to %d subscription(s) for user %d", p.Type, len(subs), receiverID)
 	for _, sub := range subs {
-		go n.sendToSubscriptionWithOptions(sub, data, 45, webpush.UrgencyHigh)
+		go n.sendToSubscriptionWithOptions(sub, data, ttl, urgency)
 	}
 }
 
