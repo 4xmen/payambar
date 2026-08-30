@@ -676,12 +676,24 @@ dialog.modal[open]::backdrop {
 /* ==========================================================================
    MESSENGER MAIN LAYOUT
    ========================================================================== */
+.messenger-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    position: relative;
+}
+
 .messenger-container {
     display: flex;
+    flex: 1;
     height: 100%;
     width: 100%;
     background: var(--bg);
     overflow: hidden;
+    position: relative;
+    min-height: 0;
 }
 
 /* --- Chat List Panel (Sidebar) --- */
@@ -1076,14 +1088,16 @@ dialog.modal[open]::backdrop {
 .active-call-bar {
     background: var(--ink);
     color: #ffffff;
-    padding: 0.5rem 1.25rem;
+    padding: 0.5rem 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
     position: relative;
-    z-index: 6;
+    z-index: 250;
     box-shadow: var(--shadow-md);
     flex-shrink: 0;
+    cursor: pointer;
+    user-select: none;
 }
 
 .active-call-info {
@@ -1092,17 +1106,62 @@ dialog.modal[open]::backdrop {
     gap: 0.5rem;
     font-size: 0.875rem;
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.active-call-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .pulse-icon {
     color: var(--online);
     animation: pulse 1.5s infinite;
+    font-size: 0.75rem;
+    flex-shrink: 0;
 }
 
 @keyframes pulse {
     0% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.4; transform: scale(1.2); }
     100% { opacity: 1; transform: scale(1); }
+}
+
+.call-timer-badge {
+    background: rgba(255, 255, 255, 0.18);
+    padding: 0.15rem 0.55rem;
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+
+.active-call-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.btn-return-call {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    transition: background 0.15s ease;
+}
+
+.btn-return-call:hover {
+    background: rgba(255, 255, 255, 0.25);
 }
 
 .btn-hangup {
@@ -2136,7 +2195,7 @@ dialog.modal[open]::backdrop {
 
     .chat-list-panel.mobile-show {
         display: flex;
-        position: fixed;
+        position: absolute;
         inset: 0;
         width: 100%;
         max-width: none;

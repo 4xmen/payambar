@@ -2197,6 +2197,17 @@ const app = createApp({
                 notifications?.forEach(n => n.tag?.startsWith('incoming-call') && n.close());
             } catch (e) {}
         },
+        returnToActiveCallChat() {
+            if (!this.activeCall) return;
+            const targetUserId = Number(this.activeCall.user_id);
+            const targetConv = PayambarConversations.findByUserId(this.conversations, targetUserId) || {
+                user_id: targetUserId,
+                username: this.activeCall.username,
+                display_name: this.activeCall.displayName,
+                avatar_url: this.activeCall.avatar_url,
+            };
+            this.selectConversation(targetConv);
+        },
     },
 });
 
