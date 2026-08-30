@@ -12,8 +12,14 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type PendingCall struct {
+	Event     *MessageEvent
+	CreatedAt time.Time
+}
+
 type Hub struct {
 	clients      map[int]*Client
+	pendingCalls map[int]*PendingCall
 	broadcast    chan interface{}
 	register     chan *Client
 	unregister   chan *Client
@@ -71,11 +77,12 @@ var upgrader = websocket.Upgrader{
 
 func NewHub(db *sql.DB) *Hub {
 	return &Hub{
-		clients:    make(map[int]*Client),
-		broadcast:  make(chan interface{}, 256),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		db:         db,
+		clients:      make(map[int]*Client),
+		pendingCalls: make(map[int]*PendingCall),
+		broadcast:    make(chan interface{}, 256),
+		register:     make(chan *Client),
+		unregister:   make(chan *Client),
+		db:           db,
 	}
 }
 
@@ -115,8 +122,22 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client.userID] = client
+			var pendingOffer *MessageEvent
+			if pending, ok := h.pendingCalls[client.userID]; ok {
+				if time.Since(pending.CreatedAt) < 45*time.Second {
+					pendingOffer = pending.Event
+				}
+				delete(h.pendingCalls, client.userID)
+			}
 			h.mu.Unlock()
 			log.Printf("User %d connected (total: %d)", client.userID, len(h.clients))
+			if pendingOffer != nil {
+				select {
+				case client.send <- pendingOffer:
+					log.Printf("Delivered pending call offer to user %d from user %d", client.userID, pendingOffer.SenderID)
+				default:
+				}
+			}
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -198,7 +219,7 @@ func (h *Hub) broadcast_message(message interface{}) {
 			h.mu.RUnlock()
 		} else {
 			// WebRTC signaling - forward to receiver if online
-			h.mu.RLock()
+			h.mu.Lock()
 			client, receiverOnline := h.clients[msg.ReceiverID]
 			if receiverOnline {
 				select {
@@ -206,7 +227,19 @@ func (h *Hub) broadcast_message(message interface{}) {
 				default:
 				}
 			}
-			h.mu.RUnlock()
+
+			if msg.Type == "call_offer" {
+				if !receiverOnline {
+					h.pendingCalls[msg.ReceiverID] = &PendingCall{
+						Event:     msg,
+						CreatedAt: time.Now(),
+					}
+				}
+			} else if msg.Type == "call_hangup" || msg.Type == "call_reject" {
+				delete(h.pendingCalls, msg.ReceiverID)
+				delete(h.pendingCalls, msg.SenderID)
+			}
+			h.mu.Unlock()
 
 			// If receiver is offline and it's a call offer, send incoming call push notification
 			if msg.Type == "call_offer" && !receiverOnline && h.pushNotifier != nil {

@@ -1519,6 +1519,17 @@ const app = createApp({
                     avatar_url: sender.avatar_url,
                     offer: data.payload.offer
                 };
+                if (!sender.display_name && sender.username === 'کاربر') {
+                    fetch(`${API_URL}/users/${data.sender_id}`, {
+                        headers: { Authorization: `Bearer ${this.token}` }
+                    }).then(r => r.json()).then(user => {
+                        if (this.incomingCall && this.incomingCall.sender_id === Number(data.sender_id)) {
+                            this.incomingCall.username = user.username;
+                            this.incomingCall.displayName = user.display_name;
+                            this.incomingCall.avatar_url = user.avatar_url;
+                        }
+                    }).catch(() => {});
+                }
                 // Show notification if app is in background or screen off
                 if (document.visibilityState === 'hidden' && 'Notification' in window && Notification.permission === 'granted') {
                     if (navigator.serviceWorker && navigator.serviceWorker.ready) {
