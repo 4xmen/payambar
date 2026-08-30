@@ -3,12 +3,14 @@ import type { Conversation, Message } from '../types';
 import { API_URL, handleUnauthorized } from '../services/api';
 import {
   clearUnreadCount,
+  conversationsNeedingPreviewHydration,
   createConversation,
   deleteConversation as deleteConversationApi,
   fetchConversations,
   findByUserId,
   updateLastMessageAt as updateLastMessageAtHelper,
 } from '../services/conversations';
+import { fetchMessages } from '../services/messages';
 import { filterConversations, sortConversationsInPlace } from '../services/funcs';
 
 const conversations = ref<Conversation[]>([]);
@@ -77,6 +79,33 @@ export function useConversations() {
       return false;
     } finally {
       loadingConversations.value = false;
+    }
+  }
+
+  async function hydrateEncryptedConversationPreviews(
+    token: string,
+    messagesByUser: Record<number, Message[]>,
+    decryptFn: (messages: Message[]) => Promise<Message[]>
+  ): Promise<void> {
+    if (!token) return;
+    const needing = conversationsNeedingPreviewHydration(conversations.value, messagesByUser);
+    for (const conv of needing) {
+      const uid = conv.user_id;
+      if (!uid || (messagesByUser[uid] && messagesByUser[uid].length > 0)) continue;
+      fetchMessages(API_URL, token, { userId: uid, limit: 1 })
+        .then(async (res) => {
+          if (!res.ok) return;
+          const data = await res.json();
+          const raw = data.messages || [];
+          if (!raw.length) return;
+          const decrypted = await decryptFn(raw);
+          if (decrypted.length && (!messagesByUser[uid] || messagesByUser[uid].length === 0)) {
+            messagesByUser[uid] = decrypted;
+          }
+        })
+        .catch((err) => {
+          console.warn('Failed to hydrate preview for conversation:', uid, err);
+        });
     }
   }
 
@@ -178,6 +207,7 @@ export function useConversations() {
     sortList,
     updateConversationLastMessage,
     loadConversationsList,
+    hydrateEncryptedConversationPreviews,
     selectConversation,
     closeConversation,
     goBackToList,

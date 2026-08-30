@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
@@ -14,6 +16,8 @@ type Notifier struct {
 	db              *sql.DB
 	vapidPublicKey  string
 	vapidPrivateKey string
+	lastMessagePush map[string]time.Time
+	mu              sync.Mutex
 }
 
 // Subscription represents a stored Web Push subscription.
@@ -32,6 +36,7 @@ func NewNotifier(db *sql.DB, vapidPublicKey, vapidPrivateKey string) *Notifier {
 		db:              db,
 		vapidPublicKey:  vapidPublicKey,
 		vapidPrivateKey: vapidPrivateKey,
+		lastMessagePush: make(map[string]time.Time),
 	}
 }
 
@@ -48,15 +53,33 @@ type payload struct {
 	URL            string `json:"url"`
 	CallerID       int    `json:"caller_id,omitempty"`
 	CallerUsername string `json:"caller_username,omitempty"`
+	SenderUsername string `json:"sender_username,omitempty"`
 }
 
-// SendNewMessageNotification sends a push notification to all subscriptions of receiverID.
+// SendNewMessageNotification sends a push notification to all subscriptions of receiverID (throttled to 1 per 25s per sender).
 func (n *Notifier) SendNewMessageNotification(receiverID int, senderUsername string) {
+	if n == nil {
+		return
+	}
+
+	key := fmt.Sprintf("%d:%s", receiverID, senderUsername)
+	n.mu.Lock()
+	if n.lastMessagePush == nil {
+		n.lastMessagePush = make(map[string]time.Time)
+	}
+	if last, ok := n.lastMessagePush[key]; ok && time.Since(last) < 25*time.Second {
+		n.mu.Unlock()
+		return
+	}
+	n.lastMessagePush[key] = time.Now()
+	n.mu.Unlock()
+
 	n.sendToUser(receiverID, payload{
-		Type:  "message",
-		Title: "پیام جدید",
-		Body:  "پیام جدید از " + senderUsername,
-		URL:   "/",
+		Type:           "message",
+		Title:          "پیام جدید",
+		Body:           "پیام جدید از " + senderUsername,
+		SenderUsername: senderUsername,
+		URL:            "/",
 	}, 86400, webpush.UrgencyNormal)
 }
 

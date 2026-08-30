@@ -567,13 +567,22 @@ async function onAuthenticated() {
       call.loadWebRTCConfig(auth.token.value),
     ]);
 
-    // 3. Initialize E2EE in the background
+    // 3. Initialize E2EE in the background and hydrate encrypted previews
     e2ee
       .ensureE2EEReady(
         auth.token.value,
         auth.userId.value,
         auth.authPassword.value
       )
+      .then(() => {
+        if (auth.token.value && auth.userId.value) {
+          convs.hydrateEncryptedConversationPreviews(
+            auth.token.value,
+            msgs.messages,
+            (mList) => e2ee.decryptMessageList(auth.token.value!, auth.userId.value!, mList)
+          );
+        }
+      })
       .catch((err) => {
         console.warn('E2EE init error:', err);
       });
