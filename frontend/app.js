@@ -143,6 +143,7 @@ const app = createApp({
             callTimer: null,
             callStartTime: null,
             audioEnabled: true,
+            wakeLockSentinel: null,
             e2ee: {
                 enabled: true,
                 ready: false,
@@ -216,14 +217,19 @@ const app = createApp({
         });
         window.addEventListener('offline', () => { this.isOffline = true; });
 
-        // Reconnect WebSocket when tab becomes visible again
+        // Reconnect WebSocket and re-acquire wake lock when tab becomes visible again
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible' && this.isAuthed) {
-                this.syncAfterResume();
-                if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-                    this.wsReconnectAttempts = 0;
-                    this.serverOffline = false;
-                    this.connectWebSocket();
+            if (document.visibilityState === 'visible') {
+                if (this.activeCall || this.outgoingCall) {
+                    this.acquireWakeLock();
+                }
+                if (this.isAuthed) {
+                    this.syncAfterResume();
+                    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                        this.wsReconnectAttempts = 0;
+                        this.serverOffline = false;
+                        this.connectWebSocket();
+                    }
                 }
             }
         });
@@ -1511,6 +1517,8 @@ const app = createApp({
                         this.activeCall = { ...this.outgoingCall, user_id: Number(this.outgoingCall.receiver_id) };
                         this.outgoingCall = null;
                         this.startCallTimer();
+                        this.acquireWakeLock();
+                        this.setupMediaSession(this.activeCall.displayName || this.activeCall.username);
                         console.log('[WebRTC] Call is now active!');
                     } catch (err) {
                         console.error('[WebRTC] Error handling call_answer:', err);
@@ -1873,7 +1881,12 @@ const app = createApp({
             try {
                 console.log('[WebRTC] startCall: Getting user media...');
                 this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                this.localStream.getAudioTracks().forEach(track => {
+                    track.onmute = () => console.warn('[WebRTC] Local microphone track muted by OS (screen lock or background)');
+                    track.onunmute = () => console.log('[WebRTC] Local microphone track unmuted');
+                });
                 console.log('[WebRTC] startCall: Got local stream with tracks:', this.localStream.getTracks().map(t => t.kind + ':' + t.enabled));
+                this.acquireWakeLock();
                 this.setupPeerConnection(receiverId);
                 this.localStream.getTracks().forEach(track => {
                     console.log('[WebRTC] startCall: Adding track:', track.kind, track.enabled);
@@ -1901,7 +1914,12 @@ const app = createApp({
             try {
                 console.log('[WebRTC] acceptCall: Getting user media...');
                 this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                this.localStream.getAudioTracks().forEach(track => {
+                    track.onmute = () => console.warn('[WebRTC] Local microphone track muted by OS (screen lock or background)');
+                    track.onunmute = () => console.log('[WebRTC] Local microphone track unmuted');
+                });
                 console.log('[WebRTC] acceptCall: Got local stream with tracks:', this.localStream.getTracks().map(t => t.kind + ':' + t.enabled));
+                this.acquireWakeLock();
                 this.setupPeerConnection(senderId);
                 this.localStream.getTracks().forEach(track => {
                     console.log('[WebRTC] acceptCall: Adding track:', track.kind, track.enabled);
@@ -1925,6 +1943,7 @@ const app = createApp({
                     displayName: this.incomingCall.displayName,
                     avatar_url: this.incomingCall.avatar_url
                 };
+                this.setupMediaSession(this.activeCall.displayName || this.activeCall.username);
                 this.incomingCall = null;
                 this.startCallTimer();
             } catch (err) {
@@ -1944,6 +1963,9 @@ const app = createApp({
             this.incomingCall = null;
         },
         endCall(isInitiator = true) {
+            this.releaseWakeLock();
+            this.cleanupMediaSession();
+
             if (this.activeCall) {
                 if (isInitiator) {
                     this.ws.send(JSON.stringify({
@@ -2069,6 +2091,53 @@ const app = createApp({
                     receiver_id: otherUserId,
                     content: content
                 }));
+            }
+        },
+        async acquireWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    if (this.wakeLockSentinel) {
+                        await this.wakeLockSentinel.release().catch(() => {});
+                    }
+                    this.wakeLockSentinel = await navigator.wakeLock.request('screen');
+                    this.wakeLockSentinel.addEventListener('release', () => {
+                        console.log('[WebRTC] Screen wake lock was released');
+                    });
+                    console.log('[WebRTC] Screen wake lock active (screen will not sleep during call)');
+                } catch (err) {
+                    console.warn('[WebRTC] Could not acquire screen wake lock:', err);
+                }
+            }
+        },
+        releaseWakeLock() {
+            if (this.wakeLockSentinel) {
+                this.wakeLockSentinel.release().catch(() => {});
+                this.wakeLockSentinel = null;
+                console.log('[WebRTC] Screen wake lock released');
+            }
+        },
+        setupMediaSession(name) {
+            if ('mediaSession' in navigator) {
+                try {
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: name || 'تماس صوتی',
+                        artist: 'Payambar',
+                        album: 'تماس صوتی در حال انجام',
+                    });
+                    navigator.mediaSession.playbackState = 'playing';
+                    navigator.mediaSession.setActionHandler('hangup', () => {
+                        this.endCall(true);
+                    });
+                } catch (e) {
+                    console.warn('[WebRTC] MediaSession error:', e);
+                }
+            }
+        },
+        cleanupMediaSession() {
+            if ('mediaSession' in navigator) {
+                try {
+                    navigator.mediaSession.playbackState = 'none';
+                } catch (e) {}
             }
         },
     },
