@@ -163,21 +163,34 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
-  const url = event.notification.data?.url || '/';
+  const isAnswerAction = event.action === 'answer';
+  let rawUrl = event.notification.data?.url || '/';
+  if (isAnswerAction) {
+    rawUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'auto_answer=1';
+  }
+  const targetUrl = new URL(rawUrl, self.location.origin).href;
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       // Focus an existing window if available
       for (const client of windowClients) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
-          if ('navigate' in client && url !== '/') {
-            client.navigate(url);
+        if (client.url && client.url.includes(self.location.origin) && 'focus' in client) {
+          if (isAnswerAction) {
+            client.postMessage({
+              type: 'auto_answer',
+              caller_id: event.notification.data?.caller_id,
+            });
+          }
+          if ('navigate' in client && targetUrl !== client.url) {
+            client.navigate(targetUrl);
           }
           return client.focus();
         }
       }
       // Otherwise open a new window
-      return clients.openWindow(url);
+      if (clients.openWindow) {
+        return clients.openWindow(targetUrl);
+      }
     })
   );
 });

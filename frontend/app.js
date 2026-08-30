@@ -139,6 +139,7 @@ const app = createApp({
             incomingCall: null, // { sender_id, username, displayName, avatar_url, offer }
             outgoingCall: null, // { receiver_id, username, displayName, avatar_url, status }
             activeCall: null,   // { user_id, username, displayName, avatar_url }
+            pendingAutoAnswer: false,
             callDuration: '',
             callTimer: null,
             callStartTime: null,
@@ -199,6 +200,19 @@ const app = createApp({
             this.connectWebSocket();
             this.fetchWebRTCConfig();
             this.restorePushSubscription();
+        }
+
+        // Listen for service worker messages (e.g. auto_answer from notification action)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', (event) => {
+                if (event.data?.type === 'auto_answer') {
+                    this.pendingAutoAnswer = true;
+                    if (this.incomingCall) {
+                        this.pendingAutoAnswer = false;
+                        this.$nextTick(() => { this.acceptCall(); });
+                    }
+                }
+            });
         }
         // Listen for online/offline events
         window.addEventListener('online', () => {
@@ -945,6 +959,9 @@ const app = createApp({
                 // Check if opened from an incoming call notification URL
                 const urlParams = new URLSearchParams(window.location.search);
                 const callFrom = urlParams.get('call_from');
+                if (urlParams.get('auto_answer') === '1') {
+                    this.pendingAutoAnswer = true;
+                }
                 if (callFrom && !this.currentConversationId) {
                     const targetConv = PayambarConversations.findByUserId(this.conversations, Number(callFrom));
                     if (targetConv) {
@@ -1529,6 +1546,14 @@ const app = createApp({
                             this.incomingCall.avatar_url = user.avatar_url;
                         }
                     }).catch(() => {});
+                }
+
+                if (this.pendingAutoAnswer) {
+                    this.pendingAutoAnswer = false;
+                    this.$nextTick(() => {
+                        this.acceptCall();
+                    });
+                    return;
                 }
                 // Show notification if app is in background or screen off
                 if (document.visibilityState === 'hidden' && 'Notification' in window && Notification.permission === 'granted') {
