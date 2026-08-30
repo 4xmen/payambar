@@ -4,10 +4,8 @@ FROM golang:1.25-alpine AS builder
 WORKDIR /app
 COPY . .
 
-ARG VERSION=dev
-
 # Build frontend to cmd/payambar/static
-RUN apk add --no-cache make build-base sqlite-dev && make build-frontend
+RUN apk add --no-cache make build-base sqlite-dev nodejs npm && cd frontend && npm ci && npm run build && cd .. && make build-frontend
 
 # Build backend with embedded frontend
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -ldflags "-X main.Version=${VERSION}" -o bin/payambar ./cmd/payambar

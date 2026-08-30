@@ -1348,7 +1348,7 @@ func (h *MessageHandler) GetUserDeviceKeys(c *gin.Context) {
 		SELECT device_id, algorithm, public_key, key_id
 		FROM user_device_keys
 		WHERE user_id = ? AND revoked_at IS NULL
-		ORDER BY created_at DESC
+		ORDER BY COALESCE(updated_at, created_at) DESC
 	`, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to fetch device keys")})

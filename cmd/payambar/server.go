@@ -297,26 +297,6 @@ func serveStatics(router *gin.Engine) {
 		c.Data(http.StatusOK, "text/css; charset=utf-8", data)
 	})
 
-	router.GET("/app.js", func(c *gin.Context) {
-		data, err := fs.ReadFile(staticFS, "static/app.js")
-		if err != nil {
-			c.JSON(404, gin.H{"error": __("not found")})
-			return
-		}
-		c.Header("Cache-Control", "public, max-age=31536000, immutable")
-		c.Data(http.StatusOK, "application/javascript; charset=utf-8", data)
-	})
-
-	router.GET("/vue.global.prod.js", func(c *gin.Context) {
-		data, err := fs.ReadFile(staticFS, "static/vue.global.prod.js")
-		if err != nil {
-			c.JSON(404, gin.H{"error": __("not found")})
-			return
-		}
-		c.Header("Cache-Control", "public, max-age=31536000, immutable")
-		c.Data(http.StatusOK, "application/javascript; charset=utf-8", data)
-	})
-
 	// Serve fonts
 	router.GET("/fonts/*filepath", func(c *gin.Context) {
 		file := strings.TrimPrefix(c.Param("filepath"), "/")
@@ -329,16 +309,32 @@ func serveStatics(router *gin.Engine) {
 		c.Data(http.StatusOK, "font/woff2", data)
 	})
 
-	// Serve frontend lib helpers (e2ee.js, funcs.js)
-	router.GET("/lib/*filepath", func(c *gin.Context) {
+	// Serve frontend assets (Vite / bundler outputs)
+	router.GET("/assets/*filepath", func(c *gin.Context) {
 		file := strings.TrimPrefix(c.Param("filepath"), "/")
-		data, err := fs.ReadFile(staticFS, path.Join("static/lib", file))
+		data, err := fs.ReadFile(staticFS, path.Join("static/assets", file))
 		if err != nil {
 			c.JSON(404, gin.H{"error": __("not found")})
 			return
 		}
 		c.Header("Cache-Control", "public, max-age=31536000, immutable")
-		c.Data(http.StatusOK, "application/javascript; charset=utf-8", data)
+		ext := strings.ToLower(path.Ext(file))
+		switch ext {
+		case ".js":
+			c.Data(http.StatusOK, "application/javascript; charset=utf-8", data)
+		case ".css":
+			c.Data(http.StatusOK, "text/css; charset=utf-8", data)
+		case ".woff2":
+			c.Data(http.StatusOK, "font/woff2", data)
+		case ".woff":
+			c.Data(http.StatusOK, "font/woff", data)
+		case ".svg":
+			c.Data(http.StatusOK, "image/svg+xml", data)
+		case ".png":
+			c.Data(http.StatusOK, "image/png", data)
+		default:
+			c.Data(http.StatusOK, "application/octet-stream", data)
+		}
 	})
 
 	// Serve index.html for all other routes (SPA)

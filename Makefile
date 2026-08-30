@@ -4,28 +4,13 @@
 build-frontend:
 	@echo "Building frontend..."
 	mkdir -p cmd/payambar/static
-	cp frontend/index.html cmd/payambar/static/
-	cp frontend/styles.css cmd/payambar/static/
-	cp frontend/app.js cmd/payambar/static/
-	cp frontend/manifest.json cmd/payambar/static/
-	cp frontend/sw.js cmd/payambar/static/
-	cp frontend/vue.global.prod.js cmd/payambar/static/
-	cp -R frontend/fonts cmd/payambar/static/
-	cp -R frontend/lib cmd/payambar/static/
-	# PWA icons
-	cp frontend/favicon.svg cmd/payambar/static/
-	cp frontend/favicon-96.png cmd/payambar/static/
-	cp frontend/favicon-192.png cmd/payambar/static/
-	cp frontend/favicon-512.png cmd/payambar/static/
-	cp frontend/favicon-maskable-192.png cmd/payambar/static/
-	cp frontend/favicon-maskable-512.png cmd/payambar/static/
-	cp frontend/apple-touch-icon.png cmd/payambar/static/
-	cp frontend/screenshot-540.png cmd/payambar/static/
-	cp frontend/screenshot-1280.png cmd/payambar/static/
+	rm -rf cmd/payambar/static/*
+	cd frontend && npm run build
+	cp -R frontend/dist/* cmd/payambar/static/
 	# Inject build hash into sw.js so browsers detect frontend changes
-	$(eval BUILD_HASH := $(shell cat frontend/index.html frontend/styles.css frontend/app.js frontend/sw.js frontend/lib/*.js | shasum -a 256 | cut -c1-12))
-	# Replace placeholder in copied static files so index.html and sw.js get the real hash
-	sed -i.bak "s/__BUILD_HASH__/$(BUILD_HASH)/g" cmd/payambar/static/index.html cmd/payambar/static/sw.js && rm -f cmd/payambar/static/*.bak
+	$(eval BUILD_HASH := $(shell find frontend/dist -type f -exec shasum -a 256 {} + | shasum -a 256 | cut -c1-12))
+	sed -i.bak "s/__BUILD_HASH__/$(BUILD_HASH)/g" cmd/payambar/static/sw.js cmd/payambar/static/index.html 2>/dev/null || true
+	rm -f cmd/payambar/static/*.bak
 	@echo "Frontend built in cmd/payambar/static/ (hash: $(BUILD_HASH))"
 
 # Version defaults to 'dev'; override with: make build-backend VERSION=v1.2.0
