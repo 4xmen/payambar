@@ -165,6 +165,71 @@ describe('Component Unit Tests', () => {
       expect(wrapper.classes()).toContain('sent');
       expect(wrapper.text()).toContain('سلام روز بخیر');
       expect(wrapper.find('.message-status').exists()).toBe(true);
+      // Double check has 2 paths in SVG
+      expect(wrapper.findAll('.message-status svg path').length).toBe(2);
+    });
+
+    it('renders single check for sent status on latest message', () => {
+      const msg: Message = {
+        id: 1,
+        sender_id: 1,
+        receiver_id: 2,
+        content: 'پیام ارسال شده',
+        status: 'sent',
+        created_at: '2026-02-23T10:00:00Z',
+      };
+
+      const wrapper = mount(MessageItem, {
+        props: {
+          message: msg,
+          index: 0,
+          allMessages: [msg],
+          myUserId: 1,
+        },
+      });
+
+      expect(wrapper.find('.message-status').exists()).toBe(true);
+      // Single check has 1 path in SVG
+      expect(wrapper.findAll('.message-status svg path').length).toBe(1);
+    });
+
+    it('does not show message status for older messages when newer sent message exists', () => {
+      const msg1: Message = {
+        id: 1,
+        sender_id: 1,
+        receiver_id: 2,
+        content: 'پیام اول',
+        status: 'read',
+        created_at: '2026-02-23T10:00:00Z',
+      };
+      const msg2: Message = {
+        id: 2,
+        sender_id: 1,
+        receiver_id: 2,
+        content: 'پیام دوم',
+        status: 'sent',
+        created_at: '2026-02-23T10:01:00Z',
+      };
+
+      const wrapper1 = mount(MessageItem, {
+        props: {
+          message: msg1,
+          index: 0,
+          allMessages: [msg1, msg2],
+          myUserId: 1,
+        },
+      });
+      expect(wrapper1.find('.message-status').exists()).toBe(false);
+
+      const wrapper2 = mount(MessageItem, {
+        props: {
+          message: msg2,
+          index: 1,
+          allMessages: [msg1, msg2],
+          myUserId: 1,
+        },
+      });
+      expect(wrapper2.find('.message-status').exists()).toBe(true);
     });
 
     it('renders image media message', () => {
@@ -190,6 +255,7 @@ describe('Component Unit Tests', () => {
 
       expect(wrapper.classes()).toContain('received');
       expect(wrapper.find('img.message-image').exists()).toBe(true);
+      expect(wrapper.find('.message-status').exists()).toBe(false);
     });
   });
 

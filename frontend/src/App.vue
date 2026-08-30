@@ -238,6 +238,7 @@ async function handleWebSocketMessage(data: any) {
     );
     const incomingContent = normalizedMessage.content;
     const senderId = Number(data.sender_id);
+    const isFromMe = senderId === Number(auth.userId.value);
     const { convUser } = applyIncomingMessage(
       msgs.messages,
       auth.userId.value || 0,
@@ -251,14 +252,21 @@ async function handleWebSocketMessage(data: any) {
       msgs.messages
     );
 
-    if (Number(convs.currentConversationId.value) === convUser) {
-      sendWsJson({ type: 'mark_delivered', message_id: data.message_id });
-      sendWsJson({ type: 'mark_read', message_id: data.message_id });
+    if (!isFromMe) {
+      if (Number(convs.currentConversationId.value) === convUser) {
+        sendWsJson({ type: 'mark_delivered', message_id: data.message_id });
+        sendWsJson({ type: 'mark_read', message_id: data.message_id });
+        nextTick(() => {
+          chatPanelRef.value?.scrollToBottom();
+        });
+      } else {
+        sendWsJson({ type: 'mark_delivered', message_id: data.message_id });
+        convs.loadConversationsList(auth.token.value || '', msgs.messages);
+      }
+    } else {
       nextTick(() => {
         chatPanelRef.value?.scrollToBottom();
       });
-    } else if (senderId !== Number(auth.userId.value)) {
-      convs.loadConversationsList(auth.token.value || '', msgs.messages);
     }
   } else if (data.type === 'status_update') {
     updateMessageStatus(msgs.messages, data.message_id, data.status);

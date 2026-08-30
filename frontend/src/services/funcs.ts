@@ -139,7 +139,7 @@ export function formatDate(value: string | null | undefined): string {
 export function formatStatus(msg: { status?: string } | null | undefined): string {
   if (!msg) return '';
   if (msg.status === 'read') return '✓✓';
-  if (msg.status === 'delivered') return '✓';
+  if (msg.status === 'delivered' || msg.status === 'sent') return '✓';
   return '';
 }
 

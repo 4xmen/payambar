@@ -178,21 +178,7 @@ func (h *Hub) broadcast_message(message interface{}) {
 			}
 			h.mu.RUnlock()
 
-			// Only send delivery confirmation if receiver is online
-			if receiverOnline {
-				if sender, ok := h.clients[msg.SenderID]; ok {
-					select {
-					case sender.send <- &MessageEvent{
-						Type:       "status_update",
-						MessageID:  msg.MessageID,
-						Status:     "delivered",
-						SenderID:   msg.SenderID,
-						ReceiverID: msg.ReceiverID,
-					}:
-					default:
-					}
-				}
-			} else if h.pushNotifier != nil {
+			if !receiverOnline && h.pushNotifier != nil {
 				// Receiver is offline — send push notification
 				var senderUsername string
 				h.db.QueryRow("SELECT username FROM users WHERE id = ?", msg.SenderID).Scan(&senderUsername)
@@ -430,14 +416,19 @@ func (c *Client) handleMarkDelivered(event map[string]interface{}) {
 	}
 
 	// Update database
-	_, err := c.hub.db.Exec(`
+	res, err := c.hub.db.Exec(`
 		UPDATE messages 
 		SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
-		WHERE id = ? AND receiver_id = ?
+		WHERE id = ? AND receiver_id = ? AND status = 'sent'
 	`, int(messageID), c.userID)
 
 	if err != nil {
 		log.Printf("Failed to mark delivered: %v", err)
+		return
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil || rows == 0 {
 		return
 	}
 
@@ -464,14 +455,19 @@ func (c *Client) handleMarkRead(event map[string]interface{}) {
 	}
 
 	// Update database
-	_, err := c.hub.db.Exec(`
+	res, err := c.hub.db.Exec(`
 		UPDATE messages 
 		SET status = 'read', read_at = CURRENT_TIMESTAMP
-		WHERE id = ? AND receiver_id = ?
+		WHERE id = ? AND receiver_id = ? AND status != 'read'
 	`, int(messageID), c.userID)
 
 	if err != nil {
 		log.Printf("Failed to mark read: %v", err)
+		return
+	}
+
+	rows, err := res.RowsAffected()
+	if err != nil || rows == 0 {
 		return
 	}
 

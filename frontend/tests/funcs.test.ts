@@ -148,7 +148,7 @@ describe('PayambarFuncs', () => {
     it('maps status correctly', () => {
       expect(PayambarFuncs.formatStatus({ status: 'read' })).toBe('✓✓');
       expect(PayambarFuncs.formatStatus({ status: 'delivered' })).toBe('✓');
-      expect(PayambarFuncs.formatStatus({ status: 'sent' })).toBe('');
+      expect(PayambarFuncs.formatStatus({ status: 'sent' })).toBe('✓');
       expect(PayambarFuncs.formatStatus(null)).toBe('');
     });
   });

@@ -82,7 +82,7 @@ const emit = defineEmits<{
             <path d="M18 6 7 17l-5-5" />
             <path d="m22 10-7.5 7.5L13 16" />
           </svg>
-          <svg v-else-if="message.status === 'delivered'" class="icon-svg" viewBox="0 0 24 24">
+          <svg v-else class="icon-svg" viewBox="0 0 24 24">
             <path d="M20 6 9 17l-5-5" />
           </svg>
         </span>
