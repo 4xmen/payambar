@@ -395,18 +395,13 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 		var unreadCount int
 
 		h.db.QueryRow(`
-			SELECT COALESCE(MAX(created_at), '') FROM messages
-			WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
-		`, currentUserID, cd.otherUserID, cd.otherUserID, currentUserID).Scan(&lastMessageAt)
-
-		h.db.QueryRow(`
-			SELECT m.content, m.encrypted, f.file_name
+			SELECT m.created_at, m.content, m.encrypted, f.file_name
 			FROM messages m
 			LEFT JOIN files f ON f.message_id = m.id
 			WHERE (m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?)
 			ORDER BY m.created_at DESC
 			LIMIT 1
-		`, currentUserID, cd.otherUserID, cd.otherUserID, currentUserID).Scan(&lastMessageContent, &lastEncrypted, &lastFileName)
+		`, currentUserID, cd.otherUserID, cd.otherUserID, currentUserID).Scan(&lastMessageAt, &lastMessageContent, &lastEncrypted, &lastFileName)
 
 		h.db.QueryRow(`
 			SELECT COUNT(*) FROM messages

@@ -42,8 +42,8 @@ func New(path string) (*DB, error) {
 		return nil, fmt.Errorf("failed to set synchronous mode: %w", err)
 	}
 
-	if _, err := conn.Exec("PRAGMA foregin_key=on"); err != nil {
-		return nil, fmt.Errorf("failed to set foregin_key: %w", err)
+	if _, err := conn.Exec("PRAGMA foreign_keys = ON;"); err != nil {
+		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
 
 	// Optional: Set cache size for better performance (negative = KB, positive = pages)
@@ -128,6 +128,7 @@ func (db *DB) migrate() error {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_messages_sender_receiver ON messages(sender_id, receiver_id);
+	CREATE INDEX IF NOT EXISTS idx_messages_pair_created ON messages(sender_id, receiver_id, created_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_messages_receiver ON messages(receiver_id);
 	CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at DESC);
 	CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(receiver_id, sender_id, read_at);
