@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/4xmen/payambar/internal/auth"
 	"github.com/gin-gonic/gin"
@@ -83,18 +84,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // AuthMiddleware validates JWT token
 func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Try to get token from Authorization header first
-		authHeader := c.GetHeader("Authorization")
-		token := ""
-
-		if authHeader != "" {
-			// Extract token from "Bearer <token>"
-			if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-				token = authHeader[7:]
-			}
-		}
-
-		// If not in header, try query parameter (for WebSocket)
+		token, _ := strings.CutPrefix(c.GetHeader("Authorization"), "Bearer ")
 		if token == "" {
 			token = c.Query("token")
 		}

@@ -77,52 +77,47 @@ func (status *appStatusHandler) Handle(c *gin.Context) {
 		status.StorageWarnings = append(status.StorageWarnings, fmt.Sprintf("upload dir: %v", err))
 	}
 
-	if _, err := os.Stat(status.cfg.DatabasePath); err != nil {
-		status.DBWarning = append(status.DBWarning, fmt.Sprintf("database unavailable: %v", err))
-	}
+	if status.db == nil {
+		status.DBWarning = append(status.DBWarning, "database unavailable: connection is nil")
+	} else {
+		var err error
+		if err = status.db.Ping(); err != nil {
+			status.DBWarning = append(status.DBWarning, fmt.Sprintf("database unavailable: %v", err))
+		}
 
-	dbConn, err := sql.Open("sqlite3", status.cfg.DatabasePath)
-	if err != nil {
-		status.DBWarning = append(status.DBWarning, fmt.Sprintf("database unavailable: %v", err))
-	}
-	defer dbConn.Close()
+		if status.Users, err = queryInt64(status.db, "SELECT COUNT(*) FROM users"); err != nil {
+			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
+		}
 
-	if err := dbConn.Ping(); err != nil {
-		status.DBWarning = append(status.DBWarning, fmt.Sprintf("database unavailable: %v", err))
-	}
+		if status.Conversations, err = queryInt64(status.db, "SELECT COUNT(*) FROM conversations"); err != nil {
+			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
+		}
 
-	if status.Users, err = queryInt64(dbConn, "SELECT COUNT(*) FROM users"); err != nil {
-		status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
-	}
+		if status.Messages, err = queryInt64(status.db, "SELECT COUNT(*) FROM messages"); err != nil {
+			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
+		}
 
-	if status.Conversations, err = queryInt64(dbConn, "SELECT COUNT(*) FROM conversations"); err != nil {
-		status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
-	}
+		if status.UnreadMessages, err = queryInt64(status.db, "SELECT COUNT(*) FROM messages WHERE read_at IS NULL"); err != nil {
+			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
+		}
 
-	if status.Messages, err = queryInt64(dbConn, "SELECT COUNT(*) FROM messages"); err != nil {
-		status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
-	}
+		if status.Files, err = queryInt64(status.db, "SELECT COUNT(*) FROM files"); err != nil {
+			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
+		}
 
-	if status.UnreadMessages, err = queryInt64(dbConn, "SELECT COUNT(*) FROM messages WHERE read_at IS NULL"); err != nil {
-		status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
-	}
+		if status.UploadedBytes, err = queryInt64(status.db, "SELECT COALESCE(SUM(file_size), 0) FROM files"); err != nil {
+			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
+		}
 
-	if status.Files, err = queryInt64(dbConn, "SELECT COUNT(*) FROM files"); err != nil {
-		status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
-	}
+		status.UploadedBytesHuman = formatBytes(status.UploadedBytes)
 
-	if status.UploadedBytes, err = queryInt64(dbConn, "SELECT COALESCE(SUM(file_size), 0) FROM files"); err != nil {
-		status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
-	}
+		if status.MessagesLast24h, err = queryInt64(status.db, "SELECT COUNT(*) FROM messages WHERE datetime(created_at) >= datetime('now', '-1 day')"); err != nil {
+			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
+		}
 
-	status.UploadedBytesHuman = formatBytes(status.UploadedBytes)
-
-	if status.MessagesLast24h, err = queryInt64(dbConn, "SELECT COUNT(*) FROM messages WHERE datetime(created_at) >= datetime('now', '-1 day')"); err != nil {
-		status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
-	}
-
-	if status.LatestMessageAt, err = queryString(dbConn, "SELECT COALESCE(MAX(created_at), '') FROM messages"); err != nil {
-		status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
+		if status.LatestMessageAt, err = queryString(status.db, "SELECT COALESCE(MAX(created_at), '') FROM messages"); err != nil {
+			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
+		}
 	}
 
 	c.JSON(http.StatusOK, status)
@@ -195,11 +190,4 @@ func formatBytes(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %ciB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
-func formatTimestamp(value string) string {
-	if value == "" {
-		return "n/a"
-	}
-	return value
 }

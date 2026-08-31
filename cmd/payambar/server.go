@@ -82,20 +82,18 @@ func RunServer(cfg *config.Config) error {
 	authHandler := handlers.NewAuthHandler(authSvc)
 	turnServerURL := cfg.TurnServer
 	if turnServerURL == "" && cfg.TurnEnabled {
-		advertisedHost := cfg.TurnAdvertisedHost
-		if advertisedHost == "" {
-			advertisedHost = cfg.TurnExternalIP
+		host := cfg.TurnAdvertisedHost
+		if host == "" {
+			host = cfg.TurnExternalIP
 		}
-		if advertisedHost == "" {
-			advertisedHost = cfg.TurnListenAddress
+		if host == "" || host == "0.0.0.0" || host == "::" {
+			host = cfg.TurnListenAddress
 		}
-		if advertisedHost == "0.0.0.0" || advertisedHost == "::" || advertisedHost == "" {
-			if ip := firstLocalIPv4(); ip != "" {
-				advertisedHost = ip
-			}
+		if host == "0.0.0.0" || host == "::" || host == "" {
+			host = firstLocalIPv4()
 		}
-		if advertisedHost != "" {
-			turnServerURL = fmt.Sprintf("turn:%s:%d", advertisedHost, cfg.TurnListenPort)
+		if host != "" {
+			turnServerURL = fmt.Sprintf("turn:%s:%d", host, cfg.TurnListenPort)
 		}
 	}
 

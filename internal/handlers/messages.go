@@ -131,18 +131,7 @@ type DeviceKeyPayload struct {
 	KeyWrapVersion  *int    `json:"key_wrap_version,omitempty"`
 }
 
-type DeviceKeyResponse struct {
-	DeviceID        string  `json:"device_id"`
-	Algorithm       string  `json:"algorithm"`
-	PublicKey       string  `json:"public_key"`
-	KeyID           string  `json:"key_id"`
-	EncPrivateKey   *string `json:"enc_private_key,omitempty"`
-	EncPrivateKeyIV *string `json:"enc_private_key_iv,omitempty"`
-	KDFSalt         *string `json:"kdf_salt,omitempty"`
-	KDFIterations   *int    `json:"kdf_iterations,omitempty"`
-	KDFAlg          *string `json:"kdf_alg,omitempty"`
-	KeyWrapVersion  *int    `json:"key_wrap_version,omitempty"`
-}
+type DeviceKeyResponse = DeviceKeyPayload
 type ConversationPreview struct {
 	ID                 int       `json:"id"`
 	UserID             int       `json:"user_id"`
