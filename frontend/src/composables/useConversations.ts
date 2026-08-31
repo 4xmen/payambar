@@ -87,8 +87,13 @@ function reconcileConversations(
       if (existing.unread_count !== item.unread_count) existing.unread_count = item.unread_count;
       if (existing.last_message_at !== item.last_message_at) existing.last_message_at = item.last_message_at;
       if (existing.last_message_preview !== item.last_message_preview) existing.last_message_preview = item.last_message_preview;
+      if (item.last_message) existing.last_message = item.last_message;
     } else {
       current.push(item);
+    }
+
+    if (item.last_message && messagesByUser && (!messagesByUser[uid] || messagesByUser[uid].length === 0)) {
+      messagesByUser[uid] = [item.last_message];
     }
   }
 
@@ -129,6 +134,46 @@ function reconcileConversations(
     decryptFn: (messages: Message[]) => Promise<Message[]>
   ): Promise<void> {
     if (!token) return;
+
+    // 1. Batch decrypt any attached last_message items in memory (0 network requests)
+    const messagesToDecrypt: Message[] = [];
+    const uidMap: Record<number, number> = {};
+
+    for (const conv of conversations.value) {
+      const uid = Number(conv.user_id);
+      if (!uid) continue;
+
+      const localList = messagesByUser[uid];
+      const targetMsg = (localList && localList.length > 0) ? localList[localList.length - 1] : conv.last_message;
+
+      if (targetMsg) {
+        if (!localList || localList.length === 0) {
+          messagesByUser[uid] = [targetMsg];
+        }
+        if (targetMsg.encrypted && !targetMsg.content && targetMsg.id != null) {
+          messagesToDecrypt.push(targetMsg);
+          uidMap[targetMsg.id] = uid;
+        }
+      }
+    }
+
+    if (messagesToDecrypt.length > 0) {
+      try {
+        const decryptedList = await decryptFn(messagesToDecrypt);
+        for (const dec of decryptedList) {
+          if (dec.id != null) {
+            const uid = uidMap[dec.id];
+            if (uid && messagesByUser[uid]) {
+              messagesByUser[uid] = [dec];
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to batch decrypt conversation previews:', err);
+      }
+    }
+
+    // 2. Fallback only if there's any conversation still missing local preview (backwards compatibility)
     const needing = conversationsNeedingPreviewHydration(conversations.value, messagesByUser);
     for (const conv of needing) {
       const uid = conv.user_id;

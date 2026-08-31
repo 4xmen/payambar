@@ -133,16 +133,17 @@ type DeviceKeyPayload struct {
 
 type DeviceKeyResponse = DeviceKeyPayload
 type ConversationPreview struct {
-	ID                 int       `json:"id"`
-	UserID             int       `json:"user_id"`
-	Username           string    `json:"username"`
-	DisplayName        *string   `json:"display_name,omitempty"`
-	AvatarURL          *string   `json:"avatar_url,omitempty"`
-	IsOnline           bool      `json:"is_online"`
-	LastMessageAt      time.Time `json:"last_message_at"`
-	LastMessagePreview string    `json:"last_message_preview,omitempty"`
-	UnreadCount        int       `json:"unread_count"`
-	Participants       []int     `json:"participants"`
+	ID                 int             `json:"id"`
+	UserID             int             `json:"user_id"`
+	Username           string          `json:"username"`
+	DisplayName        *string         `json:"display_name,omitempty"`
+	AvatarURL          *string         `json:"avatar_url,omitempty"`
+	IsOnline           bool            `json:"is_online"`
+	LastMessageAt      time.Time       `json:"last_message_at"`
+	LastMessagePreview string          `json:"last_message_preview,omitempty"`
+	UnreadCount        int             `json:"unread_count"`
+	Participants       []int           `json:"participants"`
+	LastMessage        *models.Message `json:"last_message,omitempty"`
 }
 
 // GetConversation retrieves message history between two users
@@ -389,19 +390,85 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 			continue
 		}
 
-		var lastMessageAt sql.NullString
-		var lastMessageContent, lastFileName sql.NullString
-		var lastEncrypted sql.NullInt64
-		var unreadCount int
+		var (
+			msgID, msgSenderID, msgReceiverID                     sql.NullInt64
+			msgContent, msgStatus, msgCreatedAt                   sql.NullString
+			msgDeliveredAt, msgReadAt                             sql.NullString
+			fileName, filePath, fileType                          sql.NullString
+			e2eeVersion, encrypted                                sql.NullInt64
+			algorithm, senderDeviceID, keyID, iv, ciphertext, aad sql.NullString
+			unreadCount                                           int
+		)
 
 		h.db.QueryRow(`
-			SELECT m.created_at, m.content, m.encrypted, f.file_name
+			SELECT m.id, m.sender_id, m.receiver_id, m.content, m.encrypted, m.e2ee_v, m.alg, m.sender_device_id, m.key_id, m.iv, m.ciphertext, m.aad,
+			       m.status, m.created_at, m.delivered_at, m.read_at, f.file_name, f.file_path, f.content_type
 			FROM messages m
 			LEFT JOIN files f ON f.message_id = m.id
 			WHERE (m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?)
 			ORDER BY m.created_at DESC
 			LIMIT 1
-		`, currentUserID, cd.otherUserID, cd.otherUserID, currentUserID).Scan(&lastMessageAt, &lastMessageContent, &lastEncrypted, &lastFileName)
+		`, currentUserID, cd.otherUserID, cd.otherUserID, currentUserID).Scan(
+			&msgID, &msgSenderID, &msgReceiverID, &msgContent, &encrypted, &e2eeVersion, &algorithm, &senderDeviceID, &keyID, &iv, &ciphertext, &aad,
+			&msgStatus, &msgCreatedAt, &msgDeliveredAt, &msgReadAt, &fileName, &filePath, &fileType,
+		)
+
+		var lastMsg *models.Message
+		if msgID.Valid {
+			lastMsg = &models.Message{
+				ID:         int(msgID.Int64),
+				SenderID:   int(msgSenderID.Int64),
+				ReceiverID: int(msgReceiverID.Int64),
+				Content:    msgContent.String,
+				Encrypted:  encrypted.Valid && encrypted.Int64 != 0,
+				Status:     msgStatus.String,
+			}
+			if e2eeVersion.Valid {
+				v := int(e2eeVersion.Int64)
+				lastMsg.E2EEVersion = &v
+			}
+			if algorithm.Valid {
+				lastMsg.Algorithm = &algorithm.String
+			}
+			if senderDeviceID.Valid {
+				lastMsg.SenderDeviceID = &senderDeviceID.String
+			}
+			if keyID.Valid {
+				lastMsg.KeyID = &keyID.String
+			}
+			if iv.Valid {
+				lastMsg.IV = &iv.String
+			}
+			if ciphertext.Valid {
+				lastMsg.Ciphertext = &ciphertext.String
+			}
+			if aad.Valid {
+				lastMsg.AAD = &aad.String
+			}
+			if msgCreatedAt.Valid {
+				if parsed, ok := parseSQLiteTimestamp(msgCreatedAt.String); ok {
+					lastMsg.CreatedAt = parsed
+				}
+			}
+			if msgDeliveredAt.Valid {
+				if parsed, ok := parseSQLiteTimestamp(msgDeliveredAt.String); ok {
+					lastMsg.DeliveredAt = &parsed
+				}
+			}
+			if msgReadAt.Valid {
+				if parsed, ok := parseSQLiteTimestamp(msgReadAt.String); ok {
+					lastMsg.ReadAt = &parsed
+				}
+			}
+			if fileName.Valid {
+				lastMsg.FileName = &fileName.String
+				fileURL := "/api/files/" + filepath.Base(filePath.String)
+				lastMsg.FileURL = &fileURL
+				if fileType.Valid {
+					lastMsg.FileType = &fileType.String
+				}
+			}
+		}
 
 		h.db.QueryRow(`
 			SELECT COUNT(*) FROM messages
@@ -415,6 +482,7 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 			IsOnline:     h.onlineChecker != nil && h.onlineChecker.IsUserOnline(cd.otherUserID),
 			UnreadCount:  unreadCount,
 			Participants: cd.participants,
+			LastMessage:  lastMsg,
 		}
 
 		if userInfo.displayName.Valid {
@@ -423,17 +491,15 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 		if userInfo.avatarURL.Valid {
 			conv.AvatarURL = &userInfo.avatarURL.String
 		}
-		if lastMessageAt.Valid {
-			if parsed, ok := parseSQLiteTimestamp(lastMessageAt.String); ok {
-				conv.LastMessageAt = parsed
+		if lastMsg != nil {
+			conv.LastMessageAt = lastMsg.CreatedAt
+			if lastMsg.FileName != nil && strings.TrimSpace(*lastMsg.FileName) != "" {
+				conv.LastMessagePreview = *lastMsg.FileName
+			} else if lastMsg.Encrypted {
+				conv.LastMessagePreview = "پیام رمزنگاری شده"
+			} else {
+				conv.LastMessagePreview = strings.TrimSpace(lastMsg.Content)
 			}
-		}
-		if lastFileName.Valid && strings.TrimSpace(lastFileName.String) != "" {
-			conv.LastMessagePreview = lastFileName.String
-		} else if lastEncrypted.Valid && lastEncrypted.Int64 != 0 {
-			conv.LastMessagePreview = "پیام رمزنگاری شده"
-		} else if lastMessageContent.Valid {
-			conv.LastMessagePreview = strings.TrimSpace(lastMessageContent.String)
 		}
 
 		conversations = append(conversations, conv)

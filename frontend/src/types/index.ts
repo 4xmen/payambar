@@ -25,6 +25,7 @@ export interface Conversation {
   last_message_at?: string;
   last_message_preview?: string;
   unread_count?: number;
+  last_message?: Message | null;
 }
 
 export interface Message {
