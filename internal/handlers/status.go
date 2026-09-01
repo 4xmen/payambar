@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net/http"
@@ -80,42 +81,43 @@ func (status *appStatusHandler) Handle(c *gin.Context) {
 	if status.db == nil {
 		status.DBWarning = append(status.DBWarning, "database unavailable: connection is nil")
 	} else {
+		ctx := c.Request.Context()
 		var err error
-		if err = status.db.Ping(); err != nil {
+		if err = status.db.PingContext(ctx); err != nil {
 			status.DBWarning = append(status.DBWarning, fmt.Sprintf("database unavailable: %v", err))
 		}
 
-		if status.Users, err = queryInt64(status.db, "SELECT COUNT(*) FROM users"); err != nil {
+		if status.Users, err = queryInt64(ctx, status.db, "SELECT COUNT(*) FROM users"); err != nil {
 			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
 		}
 
-		if status.Conversations, err = queryInt64(status.db, "SELECT COUNT(*) FROM conversations"); err != nil {
+		if status.Conversations, err = queryInt64(ctx, status.db, "SELECT COUNT(*) FROM conversations"); err != nil {
 			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
 		}
 
-		if status.Messages, err = queryInt64(status.db, "SELECT COUNT(*) FROM messages"); err != nil {
+		if status.Messages, err = queryInt64(ctx, status.db, "SELECT COUNT(*) FROM messages"); err != nil {
 			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
 		}
 
-		if status.UnreadMessages, err = queryInt64(status.db, "SELECT COUNT(*) FROM messages WHERE read_at IS NULL"); err != nil {
+		if status.UnreadMessages, err = queryInt64(ctx, status.db, "SELECT COUNT(*) FROM messages WHERE read_at IS NULL"); err != nil {
 			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
 		}
 
-		if status.Files, err = queryInt64(status.db, "SELECT COUNT(*) FROM files"); err != nil {
+		if status.Files, err = queryInt64(ctx, status.db, "SELECT COUNT(*) FROM files"); err != nil {
 			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
 		}
 
-		if status.UploadedBytes, err = queryInt64(status.db, "SELECT COALESCE(SUM(file_size), 0) FROM files"); err != nil {
+		if status.UploadedBytes, err = queryInt64(ctx, status.db, "SELECT COALESCE(SUM(file_size), 0) FROM files"); err != nil {
 			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
 		}
 
 		status.UploadedBytesHuman = formatBytes(status.UploadedBytes)
 
-		if status.MessagesLast24h, err = queryInt64(status.db, "SELECT COUNT(*) FROM messages WHERE datetime(created_at) >= datetime('now', '-1 day')"); err != nil {
+		if status.MessagesLast24h, err = queryInt64(ctx, status.db, "SELECT COUNT(*) FROM messages WHERE created_at >= datetime('now', '-1 day')"); err != nil {
 			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
 		}
 
-		if status.LatestMessageAt, err = queryString(status.db, "SELECT COALESCE(MAX(created_at), '') FROM messages"); err != nil {
+		if status.LatestMessageAt, err = queryString(ctx, status.db, "SELECT COALESCE(MAX(created_at), '') FROM messages"); err != nil {
 			status.DBWarning = append(status.DBWarning, fmt.Sprintf("could not read database stats: %v", err))
 		}
 	}
@@ -124,17 +126,17 @@ func (status *appStatusHandler) Handle(c *gin.Context) {
 
 }
 
-func queryInt64(db *sql.DB, query string) (int64, error) {
+func queryInt64(ctx context.Context, db *sql.DB, query string) (int64, error) {
 	var value int64
-	if err := db.QueryRow(query).Scan(&value); err != nil {
+	if err := db.QueryRowContext(ctx, query).Scan(&value); err != nil {
 		return 0, err
 	}
 	return value, nil
 }
 
-func queryString(db *sql.DB, query string) (string, error) {
+func queryString(ctx context.Context, db *sql.DB, query string) (string, error) {
 	var value string
-	if err := db.QueryRow(query).Scan(&value); err != nil {
+	if err := db.QueryRowContext(ctx, query).Scan(&value); err != nil {
 		return "", err
 	}
 	return value, nil

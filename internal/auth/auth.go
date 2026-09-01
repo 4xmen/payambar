@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -32,6 +34,10 @@ func New(db *sql.DB, jwtSecret string) *Service {
 var validUsernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
 func (s *Service) Register(username, password string) (int, error) {
+	return s.RegisterContext(context.Background(), username, password)
+}
+
+func (s *Service) RegisterContext(ctx context.Context, username, password string) (int, error) {
 	// Validate inputs
 	username = strings.TrimSpace(username)
 	if len(username) < 3 || len(username) > 32 {
@@ -54,7 +60,8 @@ func (s *Service) Register(username, password string) (int, error) {
 	}
 
 	// Insert user
-	result, err := s.db.Exec(
+	result, err := s.db.ExecContext(
+		ctx,
 		"INSERT INTO users (username, password_hash) VALUES (?, ?)",
 		username,
 		string(hash),
@@ -75,19 +82,24 @@ func (s *Service) Register(username, password string) (int, error) {
 }
 
 func (s *Service) Login(username, password string) (string, int, error) {
+	return s.LoginContext(context.Background(), username, password)
+}
+
+func (s *Service) LoginContext(ctx context.Context, username, password string) (string, int, error) {
 	username = strings.TrimSpace(username)
 
 	// Get user by username
 	var userID int
 	var passwordHash string
 
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(
+		ctx,
 		"SELECT id, password_hash FROM users WHERE username = ?",
 		username,
 	).Scan(&userID, &passwordHash)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", 0, fmt.Errorf("invalid username or password")
 		}
 		return "", 0, fmt.Errorf("Db query error: %v", err)
@@ -147,10 +159,14 @@ func (s *Service) ValidateToken(tokenString string) (*Claims, error) {
 }
 
 func (s *Service) GetUserByUsername(username string) (int, error) {
+	return s.GetUserByUsernameContext(context.Background(), username)
+}
+
+func (s *Service) GetUserByUsernameContext(ctx context.Context, username string) (int, error) {
 	var userID int
-	err := s.db.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	err := s.db.QueryRowContext(ctx, "SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return 0, fmt.Errorf("user not found")
 		}
 		return 0, fmt.Errorf("failed to query user: %w", err)
@@ -160,8 +176,13 @@ func (s *Service) GetUserByUsername(username string) (int, error) {
 
 // UserExists checks if a user with the given ID exists
 func (s *Service) UserExists(userID int) (bool, error) {
+	return s.UserExistsContext(context.Background(), userID)
+}
+
+// UserExistsContext checks if a user with the given ID exists with context
+func (s *Service) UserExistsContext(ctx context.Context, userID int) (bool, error) {
 	var exists bool
-	err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", userID).Scan(&exists)
+	err := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", userID).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("failed to query user: %w", err)
 	}

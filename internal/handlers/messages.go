@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -178,10 +179,12 @@ func (h *MessageHandler) GetConversation(c *gin.Context) {
 	}
 
 	currentUserID := userID.(int)
+	ctx := c.Request.Context()
 
 	// Ensure conversation exists to prevent stale UI states
 	var convExists bool
-	if err := h.db.QueryRow(
+	if err := h.db.QueryRowContext(
+		ctx,
 		`
 		SELECT EXISTS(
 			SELECT 1
@@ -208,7 +211,7 @@ func (h *MessageHandler) GetConversation(c *gin.Context) {
 	}
 
 	// Get messages between the two users with file attachments in single query (fixes N+1)
-	rows, err := h.db.Query(`
+	rows, err := h.db.QueryContext(ctx, `
 		SELECT m.id, m.sender_id, m.receiver_id, m.content, m.encrypted, m.e2ee_v, m.alg, m.sender_device_id, m.key_id, m.iv, m.ciphertext, m.aad,
 		       m.status, m.created_at, m.delivered_at, m.read_at, f.file_name, f.file_path, f.content_type
 		FROM messages m
@@ -224,7 +227,7 @@ func (h *MessageHandler) GetConversation(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	var messages []*models.Message
+	messages := make([]*models.Message, 0, limit)
 	for rows.Next() {
 		msg := &models.Message{}
 		var (
@@ -271,6 +274,10 @@ func (h *MessageHandler) GetConversation(c *gin.Context) {
 		}
 		messages = append(messages, msg)
 	}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to read messages")})
+		return
+	}
 
 	// Reverse to get oldest first
 	for i := len(messages)/2 - 1; i >= 0; i-- {
@@ -290,12 +297,13 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 	}
 
 	currentUserID := userID.(int)
+	ctx := c.Request.Context()
 
 	var conversations []*ConversationPreview
 
 	// Optimized approach: Fetch conversations for this user, then batch-load related data
 	// Step 1: Get user's direct conversations in one query
-	rows, err := h.db.Query(`
+	rows, err := h.db.QueryContext(ctx, `
 		SELECT c.id, other.user_id
 		FROM conversations c
 		INNER JOIN conversation_participants me
@@ -320,8 +328,8 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 		participants []int
 		otherUserID  int
 	}
-	var userConvs []convData
-	var otherUserIDs []int
+	userConvs := make([]convData, 0)
+	otherUserIDs := make([]int, 0)
 	seenOtherUsers := make(map[int]struct{})
 
 	for rows.Next() {
@@ -364,11 +372,13 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 		args[i] = id
 	}
 
-	userRows, err := h.db.Query(
+	userRows, err := h.db.QueryContext(
+		ctx,
 		`SELECT id, username, display_name, avatar_url FROM users WHERE id IN (`+placeholders+`)`,
 		args...,
 	)
 	if err == nil {
+		defer userRows.Close()
 		for userRows.Next() {
 			var id int
 			var info struct {
@@ -380,24 +390,32 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 				userInfoMap[id] = info
 			}
 		}
-		userRows.Close()
+		if err := userRows.Err(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to fetch conversations")})
+			return
+		}
 	}
 
 	// Step 3: Batch load unread counts for all conversations
 	unreadCountMap := make(map[int]int, len(otherUserIDs))
 	unreadArgs := append([]interface{}{currentUserID}, args...)
-	unreadRows, err := h.db.Query(
+	unreadRows, err := h.db.QueryContext(
+		ctx,
 		`SELECT sender_id, COUNT(*) FROM messages WHERE receiver_id = ? AND read_at IS NULL AND sender_id IN (`+placeholders+`) GROUP BY sender_id`,
 		unreadArgs...,
 	)
 	if err == nil {
+		defer unreadRows.Close()
 		for unreadRows.Next() {
 			var sID, cnt int
 			if err := unreadRows.Scan(&sID, &cnt); err == nil {
 				unreadCountMap[sID] = cnt
 			}
 		}
-		unreadRows.Close()
+		if err := unreadRows.Err(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to fetch conversations")})
+			return
+		}
 	}
 
 	// Step 4: Batch load latest message per conversation using SQLite window function
@@ -427,8 +445,9 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 	lastMsgArgs = append(lastMsgArgs, currentUserID)
 	lastMsgArgs = append(lastMsgArgs, args...)
 
-	msgRows, err := h.db.Query(lastMsgQuery, lastMsgArgs...)
+	msgRows, err := h.db.QueryContext(ctx, lastMsgQuery, lastMsgArgs...)
 	if err == nil {
+		defer msgRows.Close()
 		for msgRows.Next() {
 			var (
 				msgID, msgSenderID, msgReceiverID                     sql.NullInt64
@@ -499,7 +518,10 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 				lastMsgMap[peerUserID] = lastMsg
 			}
 		}
-		msgRows.Close()
+		if err := msgRows.Err(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to fetch conversations")})
+			return
+		}
 	}
 
 	// Step 5: Assemble conversation previews
@@ -573,16 +595,17 @@ func (h *MessageHandler) MarkAsDelivered(c *gin.Context) {
 	}
 
 	currentUserID := userID.(int)
+	ctx := c.Request.Context()
 
 	// Verify message belongs to current user as receiver
 	var receiverID int
-	err = h.db.QueryRow("SELECT receiver_id FROM messages WHERE id = ?", messageID).Scan(&receiverID)
+	err = h.db.QueryRowContext(ctx, "SELECT receiver_id FROM messages WHERE id = ?", messageID).Scan(&receiverID)
 	if err != nil || receiverID != currentUserID {
 		c.JSON(http.StatusForbidden, gin.H{"error": __("cannot mark this message")})
 		return
 	}
 
-	_, err = h.db.Exec(`
+	_, err = h.db.ExecContext(ctx, `
 		UPDATE messages 
 		SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND status = 'sent'
@@ -612,16 +635,17 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 	}
 
 	currentUserID := userID.(int)
+	ctx := c.Request.Context()
 
 	// Verify message belongs to current user as receiver
 	var receiverID int
-	err = h.db.QueryRow("SELECT receiver_id FROM messages WHERE id = ?", messageID).Scan(&receiverID)
+	err = h.db.QueryRowContext(ctx, "SELECT receiver_id FROM messages WHERE id = ?", messageID).Scan(&receiverID)
 	if err != nil || receiverID != currentUserID {
 		c.JSON(http.StatusForbidden, gin.H{"error": __("cannot mark this message")})
 		return
 	}
 
-	_, err = h.db.Exec(`
+	_, err = h.db.ExecContext(ctx, `
 		UPDATE messages 
 		SET status = 'read', read_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND receiver_id = ?
@@ -651,12 +675,20 @@ func (h *MessageHandler) DeleteMessage(c *gin.Context) {
 	}
 
 	currentUserID := userID.(int)
+	ctx := c.Request.Context()
+
+	tx, err := h.db.BeginTx(ctx, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to start transaction")})
+		return
+	}
+	defer tx.Rollback()
 
 	// Verify message belongs to current user as sender
 	var senderID int
-	err = h.db.QueryRow("SELECT sender_id FROM messages WHERE id = ?", messageID).Scan(&senderID)
+	err = tx.QueryRowContext(ctx, "SELECT sender_id FROM messages WHERE id = ?", messageID).Scan(&senderID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": __("message not found")})
 			return
 		}
@@ -671,18 +703,25 @@ func (h *MessageHandler) DeleteMessage(c *gin.Context) {
 
 	// Delete associated file if exists
 	var filePath sql.NullString
-	h.db.QueryRow("SELECT file_path FROM files WHERE message_id = ?", messageID).Scan(&filePath)
+	_ = tx.QueryRowContext(ctx, "SELECT file_path FROM files WHERE message_id = ?", messageID).Scan(&filePath)
 	if filePath.Valid && filePath.String != "" {
-		// Try to delete the file (ignore errors)
-		os.Remove(filePath.String)
-		h.db.Exec("DELETE FROM files WHERE message_id = ?", messageID)
+		_, _ = tx.ExecContext(ctx, "DELETE FROM files WHERE message_id = ?", messageID)
 	}
 
 	// Delete the message
-	_, err = h.db.Exec("DELETE FROM messages WHERE id = ? AND sender_id = ?", messageID, currentUserID)
+	_, err = tx.ExecContext(ctx, "DELETE FROM messages WHERE id = ? AND sender_id = ?", messageID, currentUserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to delete message")})
 		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to delete message")})
+		return
+	}
+
+	if filePath.Valid && filePath.String != "" {
+		_ = os.Remove(filePath.String)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
@@ -698,13 +737,14 @@ func (h *MessageHandler) GetUserProfile(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	var user models.User
-	err := h.db.QueryRow(`
+	err := h.db.QueryRowContext(ctx, `
 		SELECT id, username, display_name, avatar_url, created_at FROM users WHERE username = ?
 	`, username).Scan(&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL, &user.CreatedAt)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": __("user not found")})
 			return
 		}
@@ -733,19 +773,20 @@ func (h *MessageHandler) GetUsers(c *gin.Context) {
 	}
 
 	searchQuery := strings.TrimSpace(c.Query("q"))
+	ctx := c.Request.Context()
 
 	var rows *sql.Rows
 	var err error
 
 	if searchQuery != "" {
 		// Search by username (case-insensitive)
-		rows, err = h.db.Query(`
+		rows, err = h.db.QueryContext(ctx, `
 			SELECT id, username, display_name, avatar_url, created_at FROM users 
 			WHERE id != ? AND (username LIKE ? OR display_name LIKE ?)
 			ORDER BY username LIMIT 20
 		`, userID, "%"+searchQuery+"%", "%"+searchQuery+"%")
 	} else {
-		rows, err = h.db.Query(`
+		rows, err = h.db.QueryContext(ctx, `
 			SELECT id, username, display_name, avatar_url, created_at FROM users WHERE id != ? ORDER BY username LIMIT 20
 		`, userID)
 	}
@@ -764,7 +805,7 @@ func (h *MessageHandler) GetUsers(c *gin.Context) {
 		IsOnline    bool    `json:"is_online"`
 	}
 
-	var users []UserWithOnline
+	users := make([]UserWithOnline, 0, 20)
 	for rows.Next() {
 		var user models.User
 		if err := rows.Scan(&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL, &user.CreatedAt); err != nil {
@@ -784,8 +825,9 @@ func (h *MessageHandler) GetUsers(c *gin.Context) {
 		users = append(users, u)
 	}
 
-	if users == nil {
-		users = []UserWithOnline{}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to read users")})
+		return
 	}
 
 	c.JSON(http.StatusOK, users)
@@ -813,9 +855,11 @@ func (h *MessageHandler) CreateConversation(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	// Check if participant exists
 	var exists2 bool
-	err := h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", req.ParticipantID).Scan(&exists2)
+	err := h.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", req.ParticipantID).Scan(&exists2)
 	if err != nil || !exists2 {
 		c.JSON(http.StatusNotFound, gin.H{"error": __("participant not found")})
 		return
@@ -824,7 +868,7 @@ func (h *MessageHandler) CreateConversation(c *gin.Context) {
 	// Check if direct conversation already exists between these two users
 	currentUID := userID.(int)
 	var existingID int
-	err = h.db.QueryRow(`
+	err = h.db.QueryRowContext(ctx, `
 		SELECT cp1.conversation_id
 		FROM conversation_participants cp1
 		INNER JOIN conversation_participants cp2
@@ -841,7 +885,7 @@ func (h *MessageHandler) CreateConversation(c *gin.Context) {
 	if err == nil {
 		// Conversation already exists - get username
 		var username string
-		h.db.QueryRow("SELECT username FROM users WHERE id = ?", req.ParticipantID).Scan(&username)
+		_ = h.db.QueryRowContext(ctx, "SELECT username FROM users WHERE id = ?", req.ParticipantID).Scan(&username)
 
 		c.JSON(http.StatusOK, gin.H{
 			"id":              existingID,
@@ -853,25 +897,20 @@ func (h *MessageHandler) CreateConversation(c *gin.Context) {
 		})
 		return
 	}
-	if err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to check conversation")})
 		return
 	}
 
 	// Create new conversation
-	tx, err := h.db.Begin()
+	tx, err := h.db.BeginTx(ctx, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to start transaction")})
 		return
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 
-	result, err := tx.Exec(`
+	result, err := tx.ExecContext(ctx, `
 		INSERT INTO conversations DEFAULT VALUES
 	`)
 
@@ -883,7 +922,7 @@ func (h *MessageHandler) CreateConversation(c *gin.Context) {
 	id, _ := result.LastInsertId()
 	participantIDs := []int{currentUID, req.ParticipantID}
 
-	if _, err = tx.Exec(`
+	if _, err = tx.ExecContext(ctx, `
 		INSERT INTO conversation_participants (conversation_id, user_id)
 		VALUES (?, ?), (?, ?)
 	`, id, currentUID, id, req.ParticipantID); err != nil {
@@ -895,11 +934,10 @@ func (h *MessageHandler) CreateConversation(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to create conversation")})
 		return
 	}
-	committed = true
 
 	// Get username for the response
 	var username string
-	h.db.QueryRow("SELECT username FROM users WHERE id = ?", req.ParticipantID).Scan(&username)
+	_ = h.db.QueryRowContext(ctx, "SELECT username FROM users WHERE id = ?", req.ParticipantID).Scan(&username)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"id":              id,
@@ -927,20 +965,16 @@ func (h *MessageHandler) DeleteConversation(c *gin.Context) {
 	}
 
 	currentUserID := userID.(int)
+	ctx := c.Request.Context()
 
-	tx, err := h.db.Begin()
+	tx, err := h.db.BeginTx(ctx, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to start transaction")})
 		return
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 
-	rows, err := tx.Query("SELECT user_id FROM conversation_participants WHERE conversation_id = ?", convID)
+	rows, err := tx.QueryContext(ctx, "SELECT user_id FROM conversation_participants WHERE conversation_id = ?", convID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to fetch conversation")})
 		return
@@ -970,7 +1004,7 @@ func (h *MessageHandler) DeleteConversation(c *gin.Context) {
 
 	if len(participantIDs) == 0 {
 		var convExists bool
-		if err := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?)", convID).Scan(&convExists); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?)", convID).Scan(&convExists); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to fetch conversation")})
 			return
 		}
@@ -995,7 +1029,7 @@ func (h *MessageHandler) DeleteConversation(c *gin.Context) {
 	p2 := participantIDs[1]
 
 	filePaths := []string{}
-	fileRows, err := tx.Query(`
+	fileRows, err := tx.QueryContext(ctx, `
 		SELECT f.file_path FROM files f
 		INNER JOIN messages m ON f.message_id = m.id
 		WHERE (m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?)
@@ -1004,15 +1038,20 @@ func (h *MessageHandler) DeleteConversation(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to fetch files")})
 		return
 	}
+	defer fileRows.Close()
+
 	for fileRows.Next() {
 		var fp string
 		if err := fileRows.Scan(&fp); err == nil && fp != "" {
 			filePaths = append(filePaths, fp)
 		}
 	}
-	fileRows.Close()
+	if err := fileRows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to read files")})
+		return
+	}
 
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
 		DELETE FROM files WHERE message_id IN (
 			SELECT id FROM messages
 			WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
@@ -1023,7 +1062,7 @@ func (h *MessageHandler) DeleteConversation(c *gin.Context) {
 		return
 	}
 
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
 		DELETE FROM messages
 		WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
 	`, p1, p2, p2, p1)
@@ -1032,13 +1071,13 @@ func (h *MessageHandler) DeleteConversation(c *gin.Context) {
 		return
 	}
 
-	_, err = tx.Exec("DELETE FROM conversation_participants WHERE conversation_id = ?", convID)
+	_, err = tx.ExecContext(ctx, "DELETE FROM conversation_participants WHERE conversation_id = ?", convID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to delete conversation")})
 		return
 	}
 
-	_, err = tx.Exec("DELETE FROM conversations WHERE id = ?", convID)
+	_, err = tx.ExecContext(ctx, "DELETE FROM conversations WHERE id = ?", convID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to delete conversation")})
 		return
@@ -1048,7 +1087,6 @@ func (h *MessageHandler) DeleteConversation(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to commit delete")})
 		return
 	}
-	committed = true
 
 	for _, fp := range filePaths {
 		if isLocalUploadPath(h.uploadDir, fp) {
@@ -1086,8 +1124,10 @@ func (h *MessageHandler) UploadFile(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	// Create message for the file
-	result, err := h.db.Exec(`
+	result, err := h.db.ExecContext(ctx, `
 		INSERT INTO messages (sender_id, receiver_id, content, status, created_at)
 		VALUES (?, ?, ?, 'sent', CURRENT_TIMESTAMP)
 	`, userID.(int), receiverID, "[فایل]")
@@ -1099,7 +1139,6 @@ func (h *MessageHandler) UploadFile(c *gin.Context) {
 	messageID, _ := result.LastInsertId()
 
 	// Generate unique filename with path traversal protection
-	// filepath.Base() strips any directory components from the filename
 	safeFilename := filepath.Base(header.Filename)
 	filename := strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + safeFilename
 	uploadPath := filepath.Join(h.uploadDir, filename)
@@ -1111,7 +1150,7 @@ func (h *MessageHandler) UploadFile(c *gin.Context) {
 	}
 
 	// Save file record
-	_, err = h.db.Exec(`
+	_, err = h.db.ExecContext(ctx, `
 		INSERT INTO files (message_id, file_name, file_path, file_size, content_type, created_at)
 		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`, messageID, safeFilename, uploadPath, header.Size, header.Header.Get("Content-Type"))
@@ -1162,7 +1201,8 @@ func (h *MessageHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	_, err := h.db.Exec(`
+	ctx := c.Request.Context()
+	_, err := h.db.ExecContext(ctx, `
 		UPDATE users SET display_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 	`, req.DisplayName, userID.(int))
 
@@ -1217,19 +1257,23 @@ func (h *MessageHandler) UploadAvatar(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to save avatar")})
 		return
 	}
-	//Delete old avatar file if exists
-	var oldAvatar string
-	err = h.db.QueryRow(`SELECT avatar_url FROM users WHERE id = ?`, userID.(int)).Scan(&oldAvatar)
-	if err == nil {
+
+	ctx := c.Request.Context()
+
+	// Delete old avatar file if exists (using NullString to prevent scanning error on NULL)
+	var oldAvatar sql.NullString
+	err = h.db.QueryRowContext(ctx, `SELECT avatar_url FROM users WHERE id = ?`, userID.(int)).Scan(&oldAvatar)
+	if err == nil && oldAvatar.Valid && oldAvatar.String != "" {
 		// Delete old avatar file
-		oldAvatarFilePath, exists := localPathFromAvatarURL(oldAvatar, h.uploadDir)
+		oldAvatarFilePath, exists := localPathFromAvatarURL(oldAvatar.String, h.uploadDir)
 		if exists {
 			_ = os.Remove(oldAvatarFilePath)
 		}
 	}
+
 	// Update user's avatar_url
 	avatarURL := "/api/files/" + filename
-	_, err = h.db.Exec(`
+	_, err = h.db.ExecContext(ctx, `
 		UPDATE users SET avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 	`, avatarURL, userID.(int))
 
@@ -1252,22 +1296,18 @@ func (h *MessageHandler) DeleteAccount(c *gin.Context) {
 	}
 
 	currentUserID := userID.(int)
+	ctx := c.Request.Context()
 
-	tx, err := h.db.Begin()
+	tx, err := h.db.BeginTx(ctx, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to start transaction")})
 		return
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 
 	var avatarURL sql.NullString
-	if err := tx.QueryRow("SELECT avatar_url FROM users WHERE id = ?", currentUserID).Scan(&avatarURL); err != nil {
-		if err == sql.ErrNoRows {
+	if err := tx.QueryRowContext(ctx, "SELECT avatar_url FROM users WHERE id = ?", currentUserID).Scan(&avatarURL); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": __("user not found")})
 			return
 		}
@@ -1276,7 +1316,7 @@ func (h *MessageHandler) DeleteAccount(c *gin.Context) {
 	}
 
 	filePaths := []string{}
-	fileRows, err := tx.Query(`
+	fileRows, err := tx.QueryContext(ctx, `
 		SELECT f.file_path FROM files f
 		INNER JOIN messages m ON f.message_id = m.id
 		WHERE m.sender_id = ? OR m.receiver_id = ?
@@ -1285,15 +1325,20 @@ func (h *MessageHandler) DeleteAccount(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to fetch files")})
 		return
 	}
+	defer fileRows.Close()
+
 	for fileRows.Next() {
 		var fp string
 		if err := fileRows.Scan(&fp); err == nil && fp != "" {
 			filePaths = append(filePaths, fp)
 		}
 	}
-	fileRows.Close()
+	if err := fileRows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to read files")})
+		return
+	}
 
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
 		DELETE FROM files WHERE message_id IN (
 			SELECT id FROM messages WHERE sender_id = ? OR receiver_id = ?
 		)
@@ -1303,19 +1348,19 @@ func (h *MessageHandler) DeleteAccount(c *gin.Context) {
 		return
 	}
 
-	_, err = tx.Exec("DELETE FROM messages WHERE sender_id = ? OR receiver_id = ?", currentUserID, currentUserID)
+	_, err = tx.ExecContext(ctx, "DELETE FROM messages WHERE sender_id = ? OR receiver_id = ?", currentUserID, currentUserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to delete messages")})
 		return
 	}
 
-	_, err = tx.Exec("DELETE FROM conversation_participants WHERE user_id = ?", currentUserID)
+	_, err = tx.ExecContext(ctx, "DELETE FROM conversation_participants WHERE user_id = ?", currentUserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to delete conversations")})
 		return
 	}
 
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
 		DELETE FROM conversations
 		WHERE NOT EXISTS (
 			SELECT 1
@@ -1328,7 +1373,7 @@ func (h *MessageHandler) DeleteAccount(c *gin.Context) {
 		return
 	}
 
-	_, err = tx.Exec("DELETE FROM users WHERE id = ?", currentUserID)
+	_, err = tx.ExecContext(ctx, "DELETE FROM users WHERE id = ?", currentUserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to delete user")})
 		return
@@ -1338,7 +1383,6 @@ func (h *MessageHandler) DeleteAccount(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to commit delete")})
 		return
 	}
-	committed = true
 
 	for _, fp := range filePaths {
 		if isLocalUploadPath(h.uploadDir, fp) {
@@ -1393,7 +1437,8 @@ func (h *MessageHandler) UpsertDeviceKey(c *gin.Context) {
 		return *ptr
 	}
 
-	_, err := h.db.Exec(`
+	ctx := c.Request.Context()
+	_, err := h.db.ExecContext(ctx, `
 		INSERT INTO user_device_keys (
 			user_id, device_id, algorithm, public_key, key_id,
 			enc_private_key, enc_private_key_iv, kdf_salt, kdf_iterations, kdf_alg, key_wrap_version, updated_at
@@ -1430,7 +1475,8 @@ func (h *MessageHandler) GetUserDeviceKeys(c *gin.Context) {
 		return
 	}
 
-	rows, err := h.db.Query(`
+	ctx := c.Request.Context()
+	rows, err := h.db.QueryContext(ctx, `
 		SELECT device_id, algorithm, public_key, key_id
 		FROM user_device_keys
 		WHERE user_id = ? AND revoked_at IS NULL
@@ -1468,7 +1514,8 @@ func (h *MessageHandler) GetMyDeviceKeys(c *gin.Context) {
 		return
 	}
 
-	rows, err := h.db.Query(`
+	ctx := c.Request.Context()
+	rows, err := h.db.QueryContext(ctx, `
 		SELECT device_id, algorithm, public_key, key_id,
 		       enc_private_key, enc_private_key_iv, kdf_salt, kdf_iterations, kdf_alg, key_wrap_version, updated_at
 		FROM user_device_keys
@@ -1519,8 +1566,9 @@ func (h *MessageHandler) GetMyProfile(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	var user models.User
-	err := h.db.QueryRow(`
+	err := h.db.QueryRowContext(ctx, `
 		SELECT id, username, display_name, avatar_url, created_at FROM users WHERE id = ?
 	`, userID.(int)).Scan(&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL, &user.CreatedAt)
 
@@ -1601,9 +1649,10 @@ func (h *MessageHandler) SubscribePush(c *gin.Context) {
 	}
 
 	currentUserID := userID.(int)
+	ctx := c.Request.Context()
 
 	// Upsert — if endpoint already exists (maybe from a different user or re-subscribe), replace it
-	_, err := h.db.Exec(`
+	_, err := h.db.ExecContext(ctx, `
 		INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(endpoint) DO UPDATE SET user_id = ?, p256dh = ?, auth = ?, revoked_at = NULL
@@ -1635,8 +1684,10 @@ func (h *MessageHandler) UnsubscribePush(c *gin.Context) {
 	}
 
 	currentUserID := userID.(int)
+	ctx := c.Request.Context()
 
-	_, err := h.db.Exec(
+	_, err := h.db.ExecContext(
+		ctx,
 		"UPDATE push_subscriptions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ? AND endpoint = ?",
 		currentUserID, req.Endpoint,
 	)

@@ -128,6 +128,10 @@ func (n *Notifier) sendToUser(receiverID int, p payload, ttl int, urgency webpus
 			subs = append(subs, sub)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		log.Printf("push: error iterating subscriptions for user %d: %v", receiverID, err)
+		return
+	}
 
 	if len(subs) == 0 {
 		return

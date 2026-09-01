@@ -40,7 +40,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	userID, err := h.authSvc.Register(req.Username, req.Password)
+	userID, err := h.authSvc.RegisterContext(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": __(err.Error())})
 		return
@@ -68,7 +68,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, userID, err := h.authSvc.Login(req.Username, req.Password)
+	token, userID, err := h.authSvc.LoginContext(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": __(err.Error())})
 		return
@@ -102,7 +102,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		exists, err := h.authSvc.UserExists(claims.UserID)
+		exists, err := h.authSvc.UserExistsContext(c.Request.Context(), claims.UserID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to validate user")})
 			c.Abort()
