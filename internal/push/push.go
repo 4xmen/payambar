@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
@@ -67,11 +68,20 @@ func (n *Notifier) SendNewMessageNotification(receiverID int, senderUsername str
 	if n.lastMessagePush == nil {
 		n.lastMessagePush = make(map[string]time.Time)
 	}
-	if last, ok := n.lastMessagePush[key]; ok && time.Since(last) < 25*time.Second {
+	now := time.Now()
+	// Periodic cleanup of expired entries if map gets large
+	if len(n.lastMessagePush) > 200 {
+		for k, t := range n.lastMessagePush {
+			if now.Sub(t) > 30*time.Second {
+				delete(n.lastMessagePush, k)
+			}
+		}
+	}
+	if last, ok := n.lastMessagePush[key]; ok && now.Sub(last) < 25*time.Second {
 		n.mu.Unlock()
 		return
 	}
-	n.lastMessagePush[key] = time.Now()
+	n.lastMessagePush[key] = now
 	n.mu.Unlock()
 
 	n.sendToUser(receiverID, payload{
@@ -138,7 +148,12 @@ func (n *Notifier) sendToSubscriptionWithOptions(sub Subscription, data []byte, 
 		},
 	}
 
+	httpClient := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
 	resp, err := webpush.SendNotification(data, s, &webpush.Options{
+		HTTPClient:      httpClient,
 		VAPIDPublicKey:  n.vapidPublicKey,
 		VAPIDPrivateKey: n.vapidPrivateKey,
 		Subscriber:      "mailto:push@payambar.local",

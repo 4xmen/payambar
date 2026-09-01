@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"log"
@@ -186,23 +187,45 @@ func RunServer(cfg *config.Config) error {
 	addr := fmt.Sprintf("0.0.0.0:%s", cfg.Port)
 	log.Printf("Payambar %s starting on %s", Version, addr)
 
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1MB
+	}
+
 	// Setup graceful shutdown
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
+	serverErr := make(chan error, 1)
 	go func() {
-		<-sigint
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
+		}
+	}()
+
+	select {
+	case err := <-serverErr:
+		return err
+	case <-sigint:
 		log.Println("\nShutting down gracefully...")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
 		if embeddedTURN != nil {
 			if err := embeddedTURN.Close(); err != nil {
 				log.Printf("Failed to shutdown embedded TURN server: %v", err)
 			}
 		}
-		os.Exit(0)
-	}()
 
-	if err := router.Run(addr); err != nil {
-		return err
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("Server shutdown error: %v", err)
+			return err
+		}
 	}
 
 	return nil

@@ -5,12 +5,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 var (
-	blockedIPs = make(map[string]bool)
+	blockedIPs = make(map[string]time.Time)
 	mu         sync.RWMutex
 )
 
@@ -41,13 +42,33 @@ var suspiciousAgents = []string{
 func blockIP(ip string) {
 	mu.Lock()
 	defer mu.Unlock()
-	blockedIPs[ip] = true
+	now := time.Now()
+	// Periodic cleanup of expired entries if map gets large
+	if len(blockedIPs) > 500 {
+		for k, exp := range blockedIPs {
+			if now.After(exp) {
+				delete(blockedIPs, k)
+			}
+		}
+	}
+	// Block for 1 hour
+	blockedIPs[ip] = now.Add(1 * time.Hour)
 }
 
 func isBlocked(ip string) bool {
 	mu.RLock()
-	defer mu.RUnlock()
-	return blockedIPs[ip]
+	exp, exists := blockedIPs[ip]
+	mu.RUnlock()
+	if !exists {
+		return false
+	}
+	if time.Now().After(exp) {
+		mu.Lock()
+		delete(blockedIPs, ip)
+		mu.Unlock()
+		return false
+	}
+	return true
 }
 
 func Firewall() gin.HandlerFunc {

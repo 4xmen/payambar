@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -14,7 +15,15 @@ type DB struct {
 }
 
 func New(path string) (*DB, error) {
-	conn, err := sql.Open("sqlite3", path)
+	// Configure SQLite DSN so all pooled connections inherit these PRAGMAs
+	dsn := path
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	dsn = fmt.Sprintf("%s%s_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=ON&_synchronous=NORMAL&_cache_size=-64000", path, separator)
+
+	conn, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -24,39 +33,18 @@ func New(path string) (*DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// Enable WAL mode for concurrent writes and reads
-	// WAL mode allows readers to work while a writer is writing
-	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
-	}
-
-	// Set busy timeout to 5 seconds (waits instead of immediate SQLITE_BUSY error)
-	// This helps with concurrent write attempts
-	if _, err := conn.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		return nil, fmt.Errorf("failed to set busy timeout: %w", err)
-	}
-
-	// Use NORMAL synchronous mode (faster than FULL, still safe with WAL)
-	// FULL=safest but slower, NORMAL=good balance, OFF=fastest but risky
-	if _, err := conn.Exec("PRAGMA synchronous=NORMAL"); err != nil {
-		return nil, fmt.Errorf("failed to set synchronous mode: %w", err)
-	}
-
-	if _, err := conn.Exec("PRAGMA foreign_keys = ON;"); err != nil {
-		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
-	}
-
-	// Optional: Set cache size for better performance (negative = KB, positive = pages)
-	// -64000 = 64MB cache
-	if _, err := conn.Exec("PRAGMA cache_size=-64000"); err != nil {
-		return nil, fmt.Errorf("failed to set cache size: %w", err)
-	}
+	// Also execute PRAGMAs explicitly for the primary connection
+	_, _ = conn.Exec("PRAGMA journal_mode=WAL")
+	_, _ = conn.Exec("PRAGMA busy_timeout=5000")
+	_, _ = conn.Exec("PRAGMA synchronous=NORMAL")
+	_, _ = conn.Exec("PRAGMA foreign_keys = ON;")
+	_, _ = conn.Exec("PRAGMA cache_size=-64000")
 
 	// Configure connection pool
-	// With WAL mode, you can have more concurrent connections
 	conn.SetMaxOpenConns(25)
 	conn.SetMaxIdleConns(5)
 	conn.SetConnMaxLifetime(5 * time.Minute)
+	conn.SetConnMaxIdleTime(1 * time.Minute)
 
 	db := &DB{conn: conn}
 

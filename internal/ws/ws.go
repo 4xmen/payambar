@@ -41,6 +41,85 @@ type Client struct {
 	send   chan interface{}
 }
 
+type InboundEvent struct {
+	Type           string                 `json:"type"`
+	MessageID      int                    `json:"message_id,omitempty"`
+	ReceiverID     int                    `json:"receiver_id,omitempty"`
+	ClientMsgID    string                 `json:"client_message_id,omitempty"`
+	Content        string                 `json:"content,omitempty"`
+	Encrypted      bool                   `json:"encrypted,omitempty"`
+	E2EEVersion    int                    `json:"e2ee_v,omitempty"`
+	Algorithm      string                 `json:"alg,omitempty"`
+	SenderDeviceID string                 `json:"sender_device_id,omitempty"`
+	KeyID          string                 `json:"key_id,omitempty"`
+	IV             string                 `json:"iv,omitempty"`
+	Ciphertext     string                 `json:"ciphertext,omitempty"`
+	AAD            string                 `json:"aad,omitempty"`
+	Payload        map[string]interface{} `json:"payload,omitempty"`
+}
+
+func parseInboundEvent(v interface{}) *InboundEvent {
+	switch e := v.(type) {
+	case *InboundEvent:
+		return e
+	case InboundEvent:
+		return &e
+	case map[string]interface{}:
+		ev := &InboundEvent{}
+		if t, ok := e["type"].(string); ok {
+			ev.Type = t
+		}
+		if mid, ok := e["message_id"].(float64); ok {
+			ev.MessageID = int(mid)
+		} else if mid, ok := e["message_id"].(int); ok {
+			ev.MessageID = mid
+		}
+		if rid, ok := e["receiver_id"].(float64); ok {
+			ev.ReceiverID = int(rid)
+		} else if rid, ok := e["receiver_id"].(int); ok {
+			ev.ReceiverID = rid
+		}
+		if cmsg, ok := e["client_message_id"].(string); ok {
+			ev.ClientMsgID = cmsg
+		}
+		if cnt, ok := e["content"].(string); ok {
+			ev.Content = cnt
+		}
+		if enc, ok := e["encrypted"].(bool); ok {
+			ev.Encrypted = enc
+		}
+		if e2eev, ok := e["e2ee_v"].(float64); ok {
+			ev.E2EEVersion = int(e2eev)
+		} else if e2eev, ok := e["e2ee_v"].(int); ok {
+			ev.E2EEVersion = e2eev
+		}
+		if alg, ok := e["alg"].(string); ok {
+			ev.Algorithm = alg
+		}
+		if sdev, ok := e["sender_device_id"].(string); ok {
+			ev.SenderDeviceID = sdev
+		}
+		if kid, ok := e["key_id"].(string); ok {
+			ev.KeyID = kid
+		}
+		if iv, ok := e["iv"].(string); ok {
+			ev.IV = iv
+		}
+		if cipher, ok := e["ciphertext"].(string); ok {
+			ev.Ciphertext = cipher
+		}
+		if aad, ok := e["aad"].(string); ok {
+			ev.AAD = aad
+		}
+		if p, ok := e["payload"].(map[string]interface{}); ok {
+			ev.Payload = p
+		}
+		return ev
+	default:
+		return nil
+	}
+}
+
 type MessageEvent struct {
 	Type           string                 `json:"type"` // "message", "status_update"
 	MessageID      int                    `json:"message_id,omitempty"`
@@ -179,13 +258,21 @@ func (h *Hub) broadcast_message(message interface{}) {
 			h.mu.RUnlock()
 
 			if !receiverOnline && h.pushNotifier != nil {
-				// Receiver is offline — send push notification
-				var senderUsername string
-				h.db.QueryRow("SELECT username FROM users WHERE id = ?", msg.SenderID).Scan(&senderUsername)
-				if senderUsername == "" {
-					senderUsername = "someone"
-				}
-				go h.pushNotifier.SendNewMessageNotification(msg.ReceiverID, senderUsername)
+				// Receiver is offline — fetch sender username and send push notification asynchronously
+				receiverID := msg.ReceiverID
+				senderID := msg.SenderID
+				pn := h.pushNotifier
+				dbConn := h.db
+				go func(rID, sID int) {
+					var senderUsername string
+					if dbConn != nil {
+						_ = dbConn.QueryRow("SELECT username FROM users WHERE id = ?", sID).Scan(&senderUsername)
+					}
+					if senderUsername == "" {
+						senderUsername = "someone"
+					}
+					pn.SendNewMessageNotification(rID, senderUsername)
+				}(receiverID, senderID)
 			}
 		} else if msg.Type == "status_update" {
 			// Broadcast status updates to both sender and receiver when available
@@ -227,14 +314,22 @@ func (h *Hub) broadcast_message(message interface{}) {
 			}
 			h.mu.Unlock()
 
-			// If receiver is offline and it's a call offer, send incoming call push notification
+			// If receiver is offline and it's a call offer, send incoming call push notification asynchronously
 			if msg.Type == "call_offer" && !receiverOnline && h.pushNotifier != nil {
-				var senderUsername string
-				h.db.QueryRow("SELECT username FROM users WHERE id = ?", msg.SenderID).Scan(&senderUsername)
-				if senderUsername == "" {
-					senderUsername = "someone"
-				}
-				go h.pushNotifier.SendIncomingCallNotification(msg.ReceiverID, senderUsername, msg.SenderID)
+				receiverID := msg.ReceiverID
+				senderID := msg.SenderID
+				pn := h.pushNotifier
+				dbConn := h.db
+				go func(rID, sID int) {
+					var senderUsername string
+					if dbConn != nil {
+						_ = dbConn.QueryRow("SELECT username FROM users WHERE id = ?", sID).Scan(&senderUsername)
+					}
+					if senderUsername == "" {
+						senderUsername = "someone"
+					}
+					pn.SendIncomingCallNotification(rID, senderUsername, sID)
+				}(receiverID, senderID)
 			}
 		}
 	}
@@ -288,37 +383,32 @@ func (c *Client) readPump() {
 			break
 		}
 
-		var event map[string]interface{}
+		var event InboundEvent
 		if err := json.Unmarshal(data, &event); err != nil {
 			continue
 		}
 
-		eventType, ok := event["type"].(string)
-		if !ok {
-			continue
-		}
-
-		switch eventType {
+		switch event.Type {
 		case "message":
-			c.handleMessageEvent(event)
+			c.handleMessageEvent(&event)
 		case "mark_delivered":
-			c.handleMarkDelivered(event)
+			c.handleMarkDelivered(&event)
 		case "mark_read":
-			c.handleMarkRead(event)
+			c.handleMarkRead(&event)
 		case "call_offer", "call_answer", "ice_candidate", "call_reject", "call_hangup":
-			c.handleSignalingEvent(event)
+			c.handleSignalingEvent(&event)
 		}
 	}
 }
 
-func (c *Client) handleMessageEvent(event map[string]interface{}) {
-	receiverID, ok := event["receiver_id"].(float64)
-	if !ok {
+func (c *Client) handleMessageEvent(rawEvent interface{}) {
+	event := parseInboundEvent(rawEvent)
+	if event == nil || event.ReceiverID <= 0 {
 		return
 	}
 
-	clientMsgID, _ := event["client_message_id"].(string)
-	encrypted, _ := event["encrypted"].(bool)
+	clientMsgID := event.ClientMsgID
+	encrypted := event.Encrypted
 
 	var (
 		content        string
@@ -332,24 +422,20 @@ func (c *Client) handleMessageEvent(event map[string]interface{}) {
 	)
 
 	if encrypted {
-		e2eeVersionRaw, ok := event["e2ee_v"].(float64)
-		if !ok {
-			return
-		}
-		e2eeVersion = int(e2eeVersionRaw)
-		algorithm, _ = event["alg"].(string)
-		senderDeviceID, _ = event["sender_device_id"].(string)
-		keyID, _ = event["key_id"].(string)
-		iv, _ = event["iv"].(string)
-		ciphertext, _ = event["ciphertext"].(string)
-		aad, _ = event["aad"].(string)
+		e2eeVersion = event.E2EEVersion
+		algorithm = event.Algorithm
+		senderDeviceID = event.SenderDeviceID
+		keyID = event.KeyID
+		iv = event.IV
+		ciphertext = event.Ciphertext
+		aad = event.AAD
 		if e2eeVersion <= 0 || algorithm == "" || senderDeviceID == "" || keyID == "" || iv == "" || ciphertext == "" {
 			return
 		}
 		content = ""
 	} else {
-		content, ok = event["content"].(string)
-		if !ok || content == "" {
+		content = event.Content
+		if content == "" {
 			return
 		}
 	}
@@ -358,7 +444,7 @@ func (c *Client) handleMessageEvent(event map[string]interface{}) {
 	result, err := c.hub.db.Exec(`
 		INSERT INTO messages (sender_id, receiver_id, content, encrypted, e2ee_v, alg, sender_device_id, key_id, iv, ciphertext, aad, status, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sent', CURRENT_TIMESTAMP)
-	`, c.userID, int(receiverID), content, encrypted, e2eeVersion, algorithm, senderDeviceID, keyID, iv, ciphertext, aad)
+	`, c.userID, event.ReceiverID, content, encrypted, e2eeVersion, algorithm, senderDeviceID, keyID, iv, ciphertext, aad)
 
 	if err != nil {
 		log.Printf("Failed to save message: %v", err)
@@ -372,7 +458,7 @@ func (c *Client) handleMessageEvent(event map[string]interface{}) {
 		Type:           "message",
 		MessageID:      int(msgID),
 		SenderID:       c.userID,
-		ReceiverID:     int(receiverID),
+		ReceiverID:     event.ReceiverID,
 		ClientMsgID:    clientMsgID,
 		Content:        content,
 		Encrypted:      encrypted,
@@ -390,56 +476,45 @@ func (c *Client) handleMessageEvent(event map[string]interface{}) {
 	c.hub.broadcast <- msg
 }
 
-func (c *Client) handleSignalingEvent(event map[string]interface{}) {
-	receiverID, ok := event["receiver_id"].(float64)
-	if !ok {
+func (c *Client) handleSignalingEvent(rawEvent interface{}) {
+	event := parseInboundEvent(rawEvent)
+	if event == nil || event.ReceiverID <= 0 {
 		return
 	}
 
-	eventType, _ := event["type"].(string)
-	payload, _ := event["payload"].(map[string]interface{})
-
 	msg := &MessageEvent{
-		Type:       eventType,
+		Type:       event.Type,
 		SenderID:   c.userID,
-		ReceiverID: int(receiverID),
-		Payload:    payload,
+		ReceiverID: event.ReceiverID,
+		Payload:    event.Payload,
 	}
 
 	c.hub.broadcast <- msg
 }
 
-func (c *Client) handleMarkDelivered(event map[string]interface{}) {
-	messageID, ok := event["message_id"].(float64)
-	if !ok {
+func (c *Client) handleMarkDelivered(rawEvent interface{}) {
+	event := parseInboundEvent(rawEvent)
+	if event == nil || event.MessageID <= 0 {
 		return
 	}
 
-	// Update database
-	res, err := c.hub.db.Exec(`
+	// Update database and retrieve sender_id in a single query
+	var senderID int
+	err := c.hub.db.QueryRow(`
 		UPDATE messages 
 		SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND receiver_id = ? AND status = 'sent'
-	`, int(messageID), c.userID)
+		RETURNING sender_id
+	`, event.MessageID, c.userID).Scan(&senderID)
 
 	if err != nil {
-		log.Printf("Failed to mark delivered: %v", err)
 		return
 	}
-
-	rows, err := res.RowsAffected()
-	if err != nil || rows == 0 {
-		return
-	}
-
-	// Get sender ID
-	var senderID int
-	c.hub.db.QueryRow("SELECT sender_id FROM messages WHERE id = ?", int(messageID)).Scan(&senderID)
 
 	// Broadcast status update
 	msg := &MessageEvent{
 		Type:       "status_update",
-		MessageID:  int(messageID),
+		MessageID:  event.MessageID,
 		Status:     "delivered",
 		SenderID:   senderID,
 		ReceiverID: c.userID,
@@ -448,37 +523,29 @@ func (c *Client) handleMarkDelivered(event map[string]interface{}) {
 	c.hub.broadcast <- msg
 }
 
-func (c *Client) handleMarkRead(event map[string]interface{}) {
-	messageID, ok := event["message_id"].(float64)
-	if !ok {
+func (c *Client) handleMarkRead(rawEvent interface{}) {
+	event := parseInboundEvent(rawEvent)
+	if event == nil || event.MessageID <= 0 {
 		return
 	}
 
-	// Update database
-	res, err := c.hub.db.Exec(`
+	// Update database and retrieve sender_id in a single query
+	var senderID int
+	err := c.hub.db.QueryRow(`
 		UPDATE messages 
 		SET status = 'read', read_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND receiver_id = ? AND status != 'read'
-	`, int(messageID), c.userID)
+		RETURNING sender_id
+	`, event.MessageID, c.userID).Scan(&senderID)
 
 	if err != nil {
-		log.Printf("Failed to mark read: %v", err)
 		return
 	}
-
-	rows, err := res.RowsAffected()
-	if err != nil || rows == 0 {
-		return
-	}
-
-	// Get sender ID
-	var senderID int
-	c.hub.db.QueryRow("SELECT sender_id FROM messages WHERE id = ?", int(messageID)).Scan(&senderID)
 
 	// Broadcast status update
 	msg := &MessageEvent{
 		Type:       "status_update",
-		MessageID:  int(messageID),
+		MessageID:  event.MessageID,
 		Status:     "read",
 		SenderID:   senderID,
 		ReceiverID: c.userID,

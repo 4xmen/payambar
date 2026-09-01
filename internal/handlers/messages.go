@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -382,98 +383,135 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 		userRows.Close()
 	}
 
-	// Step 3: Build conversations with the fetched data
-	// For last_message_at and unread_count, we still need individual queries but only for filtered convs
+	// Step 3: Batch load unread counts for all conversations
+	unreadCountMap := make(map[int]int, len(otherUserIDs))
+	unreadArgs := append([]interface{}{currentUserID}, args...)
+	unreadRows, err := h.db.Query(
+		`SELECT sender_id, COUNT(*) FROM messages WHERE receiver_id = ? AND read_at IS NULL AND sender_id IN (`+placeholders+`) GROUP BY sender_id`,
+		unreadArgs...,
+	)
+	if err == nil {
+		for unreadRows.Next() {
+			var sID, cnt int
+			if err := unreadRows.Scan(&sID, &cnt); err == nil {
+				unreadCountMap[sID] = cnt
+			}
+		}
+		unreadRows.Close()
+	}
+
+	// Step 4: Batch load latest message per conversation using SQLite window function
+	lastMsgMap := make(map[int]*models.Message, len(otherUserIDs))
+	lastMsgQuery := `
+		WITH ranked_messages AS (
+			SELECT m.id, m.sender_id, m.receiver_id, m.content, m.encrypted, m.e2ee_v, m.alg, m.sender_device_id, m.key_id, m.iv, m.ciphertext, m.aad,
+			       m.status, m.created_at, m.delivered_at, m.read_at, f.file_name, f.file_path, f.content_type,
+			       CASE WHEN m.sender_id = ? THEN m.receiver_id ELSE m.sender_id END AS peer_user_id,
+			       ROW_NUMBER() OVER (
+			           PARTITION BY CASE WHEN m.sender_id = ? THEN m.receiver_id ELSE m.sender_id END
+			           ORDER BY m.created_at DESC, m.id DESC
+			       ) AS rn
+			FROM messages m
+			LEFT JOIN files f ON f.message_id = m.id
+			WHERE (m.sender_id = ? AND m.receiver_id IN (` + placeholders + `))
+			   OR (m.receiver_id = ? AND m.sender_id IN (` + placeholders + `))
+		)
+		SELECT id, sender_id, receiver_id, content, encrypted, e2ee_v, alg, sender_device_id, key_id, iv, ciphertext, aad,
+		       status, created_at, delivered_at, read_at, file_name, file_path, content_type, peer_user_id
+		FROM ranked_messages
+		WHERE rn = 1
+	`
+	lastMsgArgs := make([]interface{}, 0, 4+2*len(otherUserIDs))
+	lastMsgArgs = append(lastMsgArgs, currentUserID, currentUserID, currentUserID)
+	lastMsgArgs = append(lastMsgArgs, args...)
+	lastMsgArgs = append(lastMsgArgs, currentUserID)
+	lastMsgArgs = append(lastMsgArgs, args...)
+
+	msgRows, err := h.db.Query(lastMsgQuery, lastMsgArgs...)
+	if err == nil {
+		for msgRows.Next() {
+			var (
+				msgID, msgSenderID, msgReceiverID                     sql.NullInt64
+				msgContent, msgStatus, msgCreatedAt                   sql.NullString
+				msgDeliveredAt, msgReadAt                             sql.NullString
+				fileName, filePath, fileType                          sql.NullString
+				e2eeVersion, encrypted                                sql.NullInt64
+				algorithm, senderDeviceID, keyID, iv, ciphertext, aad sql.NullString
+				peerUserID                                            int
+			)
+			if err := msgRows.Scan(
+				&msgID, &msgSenderID, &msgReceiverID, &msgContent, &encrypted, &e2eeVersion, &algorithm, &senderDeviceID, &keyID, &iv, &ciphertext, &aad,
+				&msgStatus, &msgCreatedAt, &msgDeliveredAt, &msgReadAt, &fileName, &filePath, &fileType, &peerUserID,
+			); err == nil && msgID.Valid {
+				lastMsg := &models.Message{
+					ID:         int(msgID.Int64),
+					SenderID:   int(msgSenderID.Int64),
+					ReceiverID: int(msgReceiverID.Int64),
+					Content:    msgContent.String,
+					Encrypted:  encrypted.Valid && encrypted.Int64 != 0,
+					Status:     msgStatus.String,
+				}
+				if e2eeVersion.Valid {
+					v := int(e2eeVersion.Int64)
+					lastMsg.E2EEVersion = &v
+				}
+				if algorithm.Valid {
+					lastMsg.Algorithm = &algorithm.String
+				}
+				if senderDeviceID.Valid {
+					lastMsg.SenderDeviceID = &senderDeviceID.String
+				}
+				if keyID.Valid {
+					lastMsg.KeyID = &keyID.String
+				}
+				if iv.Valid {
+					lastMsg.IV = &iv.String
+				}
+				if ciphertext.Valid {
+					lastMsg.Ciphertext = &ciphertext.String
+				}
+				if aad.Valid {
+					lastMsg.AAD = &aad.String
+				}
+				if msgCreatedAt.Valid {
+					if parsed, ok := parseSQLiteTimestamp(msgCreatedAt.String); ok {
+						lastMsg.CreatedAt = parsed
+					}
+				}
+				if msgDeliveredAt.Valid {
+					if parsed, ok := parseSQLiteTimestamp(msgDeliveredAt.String); ok {
+						lastMsg.DeliveredAt = &parsed
+					}
+				}
+				if msgReadAt.Valid {
+					if parsed, ok := parseSQLiteTimestamp(msgReadAt.String); ok {
+						lastMsg.ReadAt = &parsed
+					}
+				}
+				if fileName.Valid {
+					lastMsg.FileName = &fileName.String
+					fileURL := "/api/files/" + filepath.Base(filePath.String)
+					lastMsg.FileURL = &fileURL
+					if fileType.Valid {
+						lastMsg.FileType = &fileType.String
+					}
+				}
+				lastMsgMap[peerUserID] = lastMsg
+			}
+		}
+		msgRows.Close()
+	}
+
+	// Step 5: Assemble conversation previews
+	conversations = make([]*ConversationPreview, 0, len(userConvs))
 	for _, cd := range userConvs {
 		userInfo, ok := userInfoMap[cd.otherUserID]
 		if !ok {
 			continue
 		}
 
-		var (
-			msgID, msgSenderID, msgReceiverID                     sql.NullInt64
-			msgContent, msgStatus, msgCreatedAt                   sql.NullString
-			msgDeliveredAt, msgReadAt                             sql.NullString
-			fileName, filePath, fileType                          sql.NullString
-			e2eeVersion, encrypted                                sql.NullInt64
-			algorithm, senderDeviceID, keyID, iv, ciphertext, aad sql.NullString
-			unreadCount                                           int
-		)
-
-		h.db.QueryRow(`
-			SELECT m.id, m.sender_id, m.receiver_id, m.content, m.encrypted, m.e2ee_v, m.alg, m.sender_device_id, m.key_id, m.iv, m.ciphertext, m.aad,
-			       m.status, m.created_at, m.delivered_at, m.read_at, f.file_name, f.file_path, f.content_type
-			FROM messages m
-			LEFT JOIN files f ON f.message_id = m.id
-			WHERE (m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?)
-			ORDER BY m.created_at DESC
-			LIMIT 1
-		`, currentUserID, cd.otherUserID, cd.otherUserID, currentUserID).Scan(
-			&msgID, &msgSenderID, &msgReceiverID, &msgContent, &encrypted, &e2eeVersion, &algorithm, &senderDeviceID, &keyID, &iv, &ciphertext, &aad,
-			&msgStatus, &msgCreatedAt, &msgDeliveredAt, &msgReadAt, &fileName, &filePath, &fileType,
-		)
-
-		var lastMsg *models.Message
-		if msgID.Valid {
-			lastMsg = &models.Message{
-				ID:         int(msgID.Int64),
-				SenderID:   int(msgSenderID.Int64),
-				ReceiverID: int(msgReceiverID.Int64),
-				Content:    msgContent.String,
-				Encrypted:  encrypted.Valid && encrypted.Int64 != 0,
-				Status:     msgStatus.String,
-			}
-			if e2eeVersion.Valid {
-				v := int(e2eeVersion.Int64)
-				lastMsg.E2EEVersion = &v
-			}
-			if algorithm.Valid {
-				lastMsg.Algorithm = &algorithm.String
-			}
-			if senderDeviceID.Valid {
-				lastMsg.SenderDeviceID = &senderDeviceID.String
-			}
-			if keyID.Valid {
-				lastMsg.KeyID = &keyID.String
-			}
-			if iv.Valid {
-				lastMsg.IV = &iv.String
-			}
-			if ciphertext.Valid {
-				lastMsg.Ciphertext = &ciphertext.String
-			}
-			if aad.Valid {
-				lastMsg.AAD = &aad.String
-			}
-			if msgCreatedAt.Valid {
-				if parsed, ok := parseSQLiteTimestamp(msgCreatedAt.String); ok {
-					lastMsg.CreatedAt = parsed
-				}
-			}
-			if msgDeliveredAt.Valid {
-				if parsed, ok := parseSQLiteTimestamp(msgDeliveredAt.String); ok {
-					lastMsg.DeliveredAt = &parsed
-				}
-			}
-			if msgReadAt.Valid {
-				if parsed, ok := parseSQLiteTimestamp(msgReadAt.String); ok {
-					lastMsg.ReadAt = &parsed
-				}
-			}
-			if fileName.Valid {
-				lastMsg.FileName = &fileName.String
-				fileURL := "/api/files/" + filepath.Base(filePath.String)
-				lastMsg.FileURL = &fileURL
-				if fileType.Valid {
-					lastMsg.FileType = &fileType.String
-				}
-			}
-		}
-
-		h.db.QueryRow(`
-			SELECT COUNT(*) FROM messages
-			WHERE receiver_id = ? AND sender_id = ? AND read_at IS NULL
-		`, currentUserID, cd.otherUserID).Scan(&unreadCount)
+		lastMsg := lastMsgMap[cd.otherUserID]
+		unreadCount := unreadCountMap[cd.otherUserID]
 
 		conv := &ConversationPreview{
 			ID:           cd.id,
@@ -505,18 +543,16 @@ func (h *MessageHandler) GetConversations(c *gin.Context) {
 		conversations = append(conversations, conv)
 	}
 
-	if conversations == nil {
-		conversations = []*ConversationPreview{}
-	}
-
 	// Sort by last_message_at descending
-	for i := 0; i < len(conversations)-1; i++ {
-		for j := i + 1; j < len(conversations); j++ {
-			if conversations[j].LastMessageAt.After(conversations[i].LastMessageAt) {
-				conversations[i], conversations[j] = conversations[j], conversations[i]
-			}
+	slices.SortFunc(conversations, func(a, b *ConversationPreview) int {
+		if b.LastMessageAt.After(a.LastMessageAt) {
+			return 1
 		}
-	}
+		if a.LastMessageAt.After(b.LastMessageAt) {
+			return -1
+		}
+		return 0
+	})
 
 	c.JSON(http.StatusOK, gin.H{"conversations": conversations})
 }

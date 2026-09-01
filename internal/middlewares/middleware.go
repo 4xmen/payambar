@@ -20,12 +20,24 @@ type responseBodyWriter struct {
 }
 
 func (w responseBodyWriter) Write(b []byte) (int, error) {
-	w.body.Write(b)
+	if w.body.Len() < 512 {
+		toWrite := len(b)
+		if rem := 512 - w.body.Len(); rem < toWrite {
+			toWrite = rem
+		}
+		w.body.Write(b[:toWrite])
+	}
 	return w.ResponseWriter.Write(b)
 }
 
 func (w responseBodyWriter) WriteString(s string) (int, error) {
-	w.body.WriteString(s)
+	if w.body.Len() < 512 {
+		toWrite := len(s)
+		if rem := 512 - w.body.Len(); rem < toWrite {
+			toWrite = rem
+		}
+		w.body.WriteString(s[:toWrite])
+	}
 	return w.ResponseWriter.WriteString(s)
 }
 
