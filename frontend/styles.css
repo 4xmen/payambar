@@ -26,6 +26,8 @@
     --surface-muted: #f2f0ea;
     --surface-hover: #eae7df;
     --surface-active: #e2ded5;
+    --surface-glass: rgba(255, 255, 255, 0.9);
+    --surface-glass-strong: rgba(255, 255, 255, 0.95);
 
     /* Borders */
     --border: #e6e4dc;
@@ -82,9 +84,84 @@
     --radius-full: 9999px;
     --radius: 16px;
 
+    /* Spacing Scale (Refactoring UI: 4, 8, 12, 16, 20, 24, 32, 40, 48, 64px) */
+    --space-1: 0.25rem;   /* 4px */
+    --space-2: 0.5rem;    /* 8px */
+    --space-3: 0.75rem;   /* 12px */
+    --space-4: 1rem;      /* 16px */
+    --space-5: 1.25rem;   /* 20px */
+    --space-6: 1.5rem;    /* 24px */
+    --space-8: 2rem;      /* 32px */
+    --space-10: 2.5rem;   /* 40px */
+    --space-12: 3rem;     /* 48px */
+    --space-16: 4rem;     /* 64px */
+
+    /* Typography Scale */
+    --font-xs: 0.75rem;     /* 12px */
+    --font-sm: 0.8125rem;   /* 13px */
+    --font-base: 0.9375rem; /* 15px */
+    --font-md: 1rem;        /* 16px */
+    --font-lg: 1.125rem;    /* 18px */
+    --font-xl: 1.25rem;     /* 20px */
+    --font-2xl: 1.5rem;     /* 24px */
+    --font-3xl: 1.875rem;   /* 30px */
+
+    /* Line Heights */
+    --leading-tight: 1.25;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.625;
+
+    /* Layout & Sizing Constraints */
+    --sidebar-width: 350px;
+    --sidebar-min-width: 300px;
+    --sidebar-collapsed-width: 300px;
+    --max-w-modal: 480px;
+    --max-w-card: 400px;
+    --max-w-bubble: 540px;
+
     /* Transitions & Offsets */
     --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
     --input-area-offset: 4.5rem;
+}
+
+[data-theme="dark"] {
+    --bg: #0f1115;
+    --surface: #181a20;
+    --surface-muted: #21242d;
+    --surface-hover: #292d38;
+    --surface-active: #323745;
+    --surface-glass: rgba(24, 26, 32, 0.88);
+    --surface-glass-strong: rgba(24, 26, 32, 0.95);
+
+    --border: #2c303c;
+    --border-subtle: #232732;
+    --border-strong: #383d4c;
+
+    --ink: #f4f4f5;
+    --ink-secondary: #d4d4d8;
+    --muted: #a1a1aa;
+    --muted-light: #71717a;
+
+    --primary: #f4f4f5;
+    --primary-hover: #e4e4e7;
+    --primary-light: rgba(244, 244, 245, 0.08);
+    --auth-accent: #f4f4f5;
+    --auth-accent-soft: rgba(244, 244, 245, 0.08);
+    --auth-gradient: linear-gradient(145deg, #13151a 0%, #0d0e12 100%);
+
+    --sent-bg: #27272a;
+    --sent-text: #fafafa;
+    --sent-meta: rgba(250, 250, 250, 0.7);
+    --received-bg: #21242d;
+    --received-text: #f4f4f5;
+    --received-border: #2c303c;
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.45), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.55), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+    --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.65);
 }
 
 /* ==========================================================================
@@ -114,8 +191,8 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
-    font-size: 15px;
-    line-height: 1.5;
+    font-size: var(--font-base);
+    line-height: var(--leading-normal);
 }
 
 button,
@@ -1007,7 +1084,7 @@ dialog.modal[open]::backdrop {
     align-items: center;
     position: sticky;
     top: 0;
-    background: rgba(255, 255, 255, 0.9);
+    background: var(--surface-glass);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     z-index: 5;
@@ -1253,9 +1330,11 @@ dialog.modal[open]::backdrop {
 .load-more-hint {
     text-align: center;
     color: var(--muted-light);
-    padding: 0.35rem;
-    font-size: 0.75rem;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-xs);
     align-self: center;
+    cursor: pointer;
+    user-select: none;
 }
 
 /* Message Item & Bubble */
@@ -1461,7 +1540,7 @@ dialog.modal[open]::backdrop {
 .message-input-area {
     padding: 0.625rem 1.25rem calc(0.75rem + env(safe-area-inset-bottom));
     border-top: 1px solid var(--border);
-    background: rgba(255, 255, 255, 0.92);
+    background: var(--surface-glass);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     position: sticky;
@@ -1600,7 +1679,7 @@ dialog.modal[open]::backdrop {
     bottom: auto;
     position: fixed;
     z-index: 1100;
-    background: rgba(255, 255, 255, 0.95);
+    background: var(--surface-glass-strong);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--border);
@@ -1664,13 +1743,14 @@ dialog.modal[open]::backdrop {
    ========================================================================== */
 .profile-modal-sheet {
     max-height: 90vh;
+    outline: none;
 }
 
 .profile-tabs {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 0.25rem;
-    padding: 0.5rem 1rem;
+    gap: var(--space-1);
+    padding: var(--space-2) var(--space-4);
     border-bottom: 1px solid var(--border);
     background: var(--surface-muted);
 }
@@ -1680,9 +1760,9 @@ dialog.modal[open]::backdrop {
     background: transparent;
     color: var(--muted);
     border-radius: var(--radius-xs);
-    padding: 0.45rem 0.25rem;
+    padding: 0.45rem var(--space-1);
     font-weight: 600;
-    font-size: 0.8125rem;
+    font-size: var(--font-sm);
     cursor: pointer;
     transition: all 0.15s ease;
 }
@@ -1699,7 +1779,7 @@ dialog.modal[open]::backdrop {
 }
 
 .profile-modal-content {
-    padding: 1.25rem 1.5rem;
+    padding: var(--space-5) var(--space-6);
     overflow-y: auto;
     flex: 1 1 auto;
     min-height: 0;
@@ -1709,9 +1789,9 @@ dialog.modal[open]::backdrop {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 1.25rem;
-    padding-bottom: 1.25rem;
+    gap: var(--space-2);
+    margin-bottom: var(--space-5);
+    padding-bottom: var(--space-5);
     border-bottom: 1px solid var(--border);
 }
 
@@ -1730,6 +1810,7 @@ dialog.modal[open]::backdrop {
     position: relative;
     box-shadow: var(--shadow-md);
     border: 2px solid var(--border);
+    cursor: pointer;
     transition: transform 0.2s ease;
 }
 

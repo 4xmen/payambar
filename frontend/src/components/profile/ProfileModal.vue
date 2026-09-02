@@ -164,7 +164,7 @@ async function onDeleteAccount() {
     class="modal"
     @click="handleBackdropClick"
   >
-    <div class="modal-content profile-modal-sheet" tabindex="-1" autofocus style="outline: none;">
+    <div class="modal-content profile-modal-sheet" tabindex="-1" autofocus>
       <div class="modal-header">
         <h3>پروفایل</h3>
         <form method="dialog">
@@ -214,7 +214,6 @@ async function onDeleteAccount() {
             <div
               class="profile-avatar-large"
               @click="avatarInputRef?.click()"
-              style="cursor: pointer;"
               title="تغییر آواتار"
             >
               <img v-if="myAvatarUrl" :src="myAvatarUrl" alt="آواتار" class="avatar-img-large" />

@@ -71,7 +71,6 @@ defineExpose({
         v-if="hasMore && !loadingOlderMessages"
         class="load-more-hint"
         @click="emit('load-older')"
-        style="cursor: pointer;"
       >
         برای بارگذاری پیام‌های قدیمی‌تر به بالا اسکرول کنید
       </div>
