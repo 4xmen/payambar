@@ -614,3 +614,53 @@ func TestSignalingForwarding(t *testing.T) {
 		// Correct
 	}
 }
+
+func TestCallRingingSignaling(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	hub := NewHub(db)
+	go hub.Run()
+
+	client1 := &Client{
+		userID: 1,
+		hub:    hub,
+		send:   make(chan interface{}, 256),
+	}
+	client2 := &Client{
+		userID: 2,
+		hub:    hub,
+		send:   make(chan interface{}, 256),
+	}
+
+	hub.register <- client1
+	hub.register <- client2
+
+	time.Sleep(10 * time.Millisecond)
+
+	// Simulate call_ringing from user 2 to user 1
+	ringingEvent := map[string]interface{}{
+		"type":        "call_ringing",
+		"receiver_id": float64(1),
+	}
+
+	client2.handleSignalingEvent(ringingEvent)
+
+	time.Sleep(50 * time.Millisecond)
+
+	select {
+	case received := <-client1.send:
+		receivedMsg, ok := received.(*MessageEvent)
+		if !ok {
+			t.Fatal("Received wrong type")
+		}
+		if receivedMsg.Type != "call_ringing" {
+			t.Errorf("Expected type 'call_ringing', got '%s'", receivedMsg.Type)
+		}
+		if receivedMsg.SenderID != 2 || receivedMsg.ReceiverID != 1 {
+			t.Errorf("Expected SenderID 2, ReceiverID 1, got %d, %d", receivedMsg.SenderID, receivedMsg.ReceiverID)
+		}
+	default:
+		t.Error("Client1 did not receive the call_ringing event")
+	}
+}

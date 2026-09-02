@@ -1148,6 +1148,40 @@ dialog.modal[open]::backdrop {
     flex-shrink: 0;
 }
 
+.btn-mute-call {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.btn-mute-call:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(1.05);
+}
+
+.btn-mute-call:active {
+    transform: scale(0.95);
+}
+
+.btn-mute-call.is-muted {
+    background: var(--danger);
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+}
+
+.btn-mute-call.is-muted:hover {
+    background: var(--danger-hover);
+}
+
 .btn-return-call {
     background: rgba(255, 255, 255, 0.15);
     color: #ffffff;
@@ -2043,6 +2077,43 @@ dialog.modal[open]::backdrop {
     width: min(380px, 92vw);
 }
 
+.call-avatar-wrapper {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.call-avatar-pulse {
+    position: absolute;
+    inset: -6px;
+    border-radius: var(--radius-full);
+    border: 2px solid var(--online);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.call-avatar-pulse.pulse-active,
+.call-avatar-pulse.pulse-incoming {
+    animation: callRipple 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+@keyframes callRipple {
+    0% {
+        transform: scale(0.9);
+        opacity: 0.8;
+    }
+    50% {
+        opacity: 0.4;
+    }
+    100% {
+        transform: scale(1.45);
+        opacity: 0;
+    }
+}
+
 .call-avatar {
     width: 72px;
     height: 72px;
@@ -2057,19 +2128,60 @@ dialog.modal[open]::backdrop {
     overflow: hidden;
     box-shadow: var(--shadow-md);
     border: 2px solid var(--border);
-    animation: pulse 2s infinite;
 }
 
 .call-info h3 {
     font-size: 1.1875rem;
     font-weight: 700;
     color: var(--ink);
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.35rem;
 }
 
 .call-info p {
     font-size: 0.875rem;
     color: var(--muted);
+}
+
+.call-status-calling,
+.call-status-ringing,
+.call-status-incoming {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+}
+
+.call-status-calling {
+    color: var(--muted);
+}
+
+.call-status-ringing {
+    color: var(--online);
+    font-weight: 600;
+}
+
+.call-status-incoming {
+    color: var(--online);
+    font-weight: 600;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.calling-dot {
+    background: var(--muted);
+    animation: pulse 1.5s infinite;
+}
+
+.ringing-dot {
+    background: var(--online);
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+    animation: pulse 1s infinite;
 }
 
 .call-actions {

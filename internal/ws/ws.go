@@ -395,7 +395,7 @@ func (c *Client) readPump() {
 			c.handleMarkDelivered(&event)
 		case "mark_read":
 			c.handleMarkRead(&event)
-		case "call_offer", "call_answer", "ice_candidate", "call_reject", "call_hangup":
+		case "call_offer", "call_answer", "ice_candidate", "call_reject", "call_hangup", "call_ringing":
 			c.handleSignalingEvent(&event)
 		}
 	}

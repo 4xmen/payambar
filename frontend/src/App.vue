@@ -178,7 +178,7 @@ async function handleWebSocketMessage(data: any) {
     if (call.activeCall.value || call.incomingCall.value || call.outgoingCall.value) {
       sendWsJson({
         type: 'call_reject',
-        receiver_id: data.sender_id,
+        receiver_id: Number(data.sender_id),
         payload: { reason: 'busy' },
       });
       return;
@@ -192,19 +192,32 @@ async function handleWebSocketMessage(data: any) {
       avatar_url: null,
     };
 
-    call.incomingCall.value = {
+    call.setIncomingCall({
       sender_id: Number(data.sender_id),
       username: sender.username,
       displayName: sender.display_name,
       avatar_url: sender.avatar_url,
       offer: data.payload.offer,
-    };
+    });
+
+    // Notify caller that we are actively ringing!
+    sendWsJson({
+      type: 'call_ringing',
+      receiver_id: Number(data.sender_id),
+    });
 
     if (call.pendingAutoAnswer.value) {
       call.pendingAutoAnswer.value = false;
       nextTick(() => {
         call.acceptCall(sendWsJson);
       });
+    }
+  } else if (data.type === 'call_ringing') {
+    if (
+      call.outgoingCall.value &&
+      Number(call.outgoingCall.value.receiver_id) === Number(data.sender_id)
+    ) {
+      call.handleCallRinging();
     }
   } else if (data.type === 'call_answer') {
     if (
@@ -220,13 +233,15 @@ async function handleWebSocketMessage(data: any) {
       call.outgoingCall.value &&
       Number(call.outgoingCall.value.receiver_id) === Number(data.sender_id)
     ) {
-      alert('تماس رد شد');
+      const isBusy = data.payload?.reason === 'busy';
+      toast.showToast(isBusy ? 'کاربر در حال مکالمه است' : 'تماس رد شد');
       call.endCall({ isInitiator: false, sendWsMessage: sendWsJson });
     }
   } else if (data.type === 'call_hangup') {
     if (
       (call.activeCall.value && Number(call.activeCall.value.user_id) === Number(data.sender_id)) ||
-      (call.incomingCall.value && Number(call.incomingCall.value.sender_id) === Number(data.sender_id))
+      (call.incomingCall.value && Number(call.incomingCall.value.sender_id) === Number(data.sender_id)) ||
+      (call.outgoingCall.value && Number(call.outgoingCall.value.receiver_id) === Number(data.sender_id))
     ) {
       call.endCall({ isInitiator: false, sendWsMessage: sendWsJson });
     }
@@ -462,6 +477,9 @@ function onStartCall() {
     displayName: c.display_name,
     avatarUrl: c.avatar_url,
     sendWsMessage: sendWsJson,
+    onSaveCallLog: (otherUserId, logText) => {
+      sendWsJson({ type: 'message', receiver_id: otherUserId, content: logText });
+    },
   });
 }
 
@@ -739,8 +757,10 @@ onBeforeUnmount(() => {
         :call-duration="call.callDuration.value"
         :chat-list-open="convs.chatListOpen.value"
         :current-conversation-id="convs.currentConversationId.value"
+        :is-muted="call.isMuted.value"
         @return-to-chat="returnToActiveCallChat"
         @hangup="onHangupCall"
+        @toggle-mute="call.toggleMute"
       />
 
       <div class="messenger-container">

@@ -8,6 +8,7 @@ import {
   fetchWebRTCConfig as fetchWebRTCConfigApi,
   setupMediaSession,
 } from '../services/webrtc';
+import { playRingback, playRingtone, stopAllSounds } from '../services/sound';
 
 const iceServers = ref<RTCIceServer[]>([]);
 const localStream = ref<MediaStream | null>(null);
@@ -19,15 +20,29 @@ const incomingCall = ref<IncomingCall | null>(null);
 const outgoingCall = ref<OutgoingCall | null>(null);
 const activeCall = ref<ActiveCall | null>(null);
 const pendingAutoAnswer = ref<boolean>(false);
+const isMuted = ref<boolean>(false);
 
 const callDuration = ref<string>('');
 let callTimer: any = null;
 let callStartTime: number | null = null;
 let wakeLockSentinel: any = null;
+let outgoingTimeoutTimer: any = null;
+let incomingTimeoutTimer: any = null;
 
 export function useCall() {
   async function loadWebRTCConfig(token: string) {
     iceServers.value = await fetchWebRTCConfigApi(API_URL, token);
+  }
+
+  function clearCallTimeouts() {
+    if (outgoingTimeoutTimer) {
+      clearTimeout(outgoingTimeoutTimer);
+      outgoingTimeoutTimer = null;
+    }
+    if (incomingTimeoutTimer) {
+      clearTimeout(incomingTimeoutTimer);
+      incomingTimeoutTimer = null;
+    }
   }
 
   function startCallTimer() {
@@ -67,6 +82,18 @@ export function useCall() {
       wakeLockSentinel.release().catch(() => {});
       wakeLockSentinel = null;
     }
+  }
+
+  function toggleMute(): boolean {
+    if (!localStream.value) return false;
+    const tracks = localStream.value.getAudioTracks();
+    if (tracks.length === 0) return false;
+    const nextState = !isMuted.value;
+    tracks.forEach((track) => {
+      track.enabled = !nextState;
+    });
+    isMuted.value = nextState;
+    return isMuted.value;
   }
 
   async function flushPendingIceCandidates() {
@@ -133,14 +160,19 @@ export function useCall() {
     displayName,
     avatarUrl,
     sendWsMessage,
+    onSaveCallLog,
   }: {
     receiverId: number;
     username: string;
     displayName?: string;
     avatarUrl?: string | null;
     sendWsMessage: (msg: Record<string, unknown>) => void;
+    onSaveCallLog?: (otherUserId: number, text: string) => void;
   }) {
     if (activeCall.value || outgoingCall.value || incomingCall.value) return;
+
+    clearCallTimeouts();
+    isMuted.value = false;
 
     outgoingCall.value = {
       receiver_id: receiverId,
@@ -149,6 +181,17 @@ export function useCall() {
       avatarUrl,
       status: 'calling',
     };
+
+    // Auto-cancel after 40s if no answer
+    outgoingTimeoutTimer = setTimeout(() => {
+      if (outgoingCall.value) {
+        endCall({
+          isInitiator: true,
+          sendWsMessage,
+          onSaveCallLog,
+        });
+      }
+    }, 40000);
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -171,12 +214,38 @@ export function useCall() {
     } catch (err) {
       console.error('Failed to start call:', err);
       alert('خطا در دسترسی به میکروفون');
-      endCall({ isInitiator: false, sendWsMessage });
+      endCall({ isInitiator: false, sendWsMessage, onSaveCallLog });
     }
+  }
+
+  function handleCallRinging() {
+    if (outgoingCall.value) {
+      outgoingCall.value.status = 'ringing';
+      playRingback();
+    }
+  }
+
+  function setIncomingCall(callData: IncomingCall) {
+    clearCallTimeouts();
+    incomingCall.value = callData;
+    playRingtone();
+
+    // Auto-dismiss after 45s if unanswered
+    incomingTimeoutTimer = setTimeout(() => {
+      if (incomingCall.value) {
+        stopAllSounds();
+        dismissCallNotification();
+        incomingCall.value = null;
+      }
+    }, 45000);
   }
 
   async function acceptCall(sendWsMessage: (msg: Record<string, unknown>) => void) {
     if (!incomingCall.value) return;
+    clearCallTimeouts();
+    stopAllSounds();
+    isMuted.value = false;
+
     const senderId = Number(incomingCall.value.sender_id);
 
     try {
@@ -227,6 +296,8 @@ export function useCall() {
     sendWsMessage: (msg: Record<string, unknown>) => void,
     onSaveCallLog?: (otherUserId: number, text: string) => void
   ) {
+    clearCallTimeouts();
+    stopAllSounds();
     dismissCallNotification();
     if (!incomingCall.value) return;
     sendWsMessage({
@@ -247,9 +318,12 @@ export function useCall() {
     sendWsMessage?: (msg: Record<string, unknown>) => void;
     onSaveCallLog?: (otherUserId: number, text: string) => void;
   }) {
+    clearCallTimeouts();
+    stopAllSounds();
     releaseWakeLock();
     cleanupMediaSession();
     dismissCallNotification();
+    isMuted.value = false;
 
     if (activeCall.value) {
       if (isInitiator && sendWsMessage) {
@@ -293,6 +367,8 @@ export function useCall() {
 
   async function handleCallAnswer(answer: RTCSessionDescriptionInit) {
     if (!outgoingCall.value || !peerConnection.value) return;
+    clearCallTimeouts();
+    stopAllSounds();
     try {
       await peerConnection.value.setRemoteDescription(new RTCSessionDescription(answer));
       await flushPendingIceCandidates();
@@ -321,12 +397,16 @@ export function useCall() {
     activeCall,
     pendingAutoAnswer,
     callDuration,
+    isMuted,
     loadWebRTCConfig,
     startCall,
     acceptCall,
     rejectCall,
     endCall,
     handleCallAnswer,
+    handleCallRinging,
+    setIncomingCall,
+    toggleMute,
     handleIncomingIceCandidate,
     flushPendingIceCandidates,
   };
