@@ -26,6 +26,7 @@ type Hub struct {
 	db           *sql.DB
 	mu           sync.RWMutex
 	pushNotifier PushNotifier
+	stop         chan struct{}
 }
 
 // PushNotifier sends push notifications to offline users.
@@ -162,6 +163,19 @@ func NewHub(db *sql.DB) *Hub {
 		register:     make(chan *Client),
 		unregister:   make(chan *Client),
 		db:           db,
+		stop:         make(chan struct{}),
+	}
+}
+
+// Stop terminates the hub's run loop.
+func (h *Hub) Stop() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	select {
+	case <-h.stop:
+		return
+	default:
+		close(h.stop)
 	}
 }
 
@@ -198,6 +212,14 @@ func (h *Hub) BroadcastMessage(messageID, senderID, receiverID int, content, sta
 func (h *Hub) Run() {
 	for {
 		select {
+		case <-h.stop:
+			h.mu.Lock()
+			for id, client := range h.clients {
+				delete(h.clients, id)
+				close(client.send)
+			}
+			h.mu.Unlock()
+			return
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client.userID] = client
@@ -208,8 +230,9 @@ func (h *Hub) Run() {
 				}
 				delete(h.pendingCalls, client.userID)
 			}
+			totalClients := len(h.clients)
 			h.mu.Unlock()
-			log.Printf("User %d connected (total: %d)", client.userID, len(h.clients))
+			log.Printf("User %d connected (total: %d)", client.userID, totalClients)
 			if pendingOffer != nil {
 				select {
 				case client.send <- pendingOffer:
@@ -224,8 +247,9 @@ func (h *Hub) Run() {
 				delete(h.clients, client.userID)
 				close(client.send)
 			}
+			totalClients := len(h.clients)
 			h.mu.Unlock()
-			log.Printf("User %d disconnected (total: %d)", client.userID, len(h.clients))
+			log.Printf("User %d disconnected (total: %d)", client.userID, totalClients)
 
 		case message := <-h.broadcast:
 			h.broadcast_message(message)

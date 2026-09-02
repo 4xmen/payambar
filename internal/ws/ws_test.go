@@ -85,6 +85,7 @@ func TestHubRun(t *testing.T) {
 	defer db.Close()
 
 	hub := NewHub(db)
+	defer hub.Stop()
 	go hub.Run()
 
 	// Allow hub goroutine to start
@@ -125,6 +126,7 @@ func TestMessageEvent(t *testing.T) {
 	defer db.Close()
 
 	hub := NewHub(db)
+	defer hub.Stop()
 	go hub.Run()
 
 	time.Sleep(10 * time.Millisecond)
@@ -196,6 +198,7 @@ func TestStatusUpdateBroadcast(t *testing.T) {
 	defer db.Close()
 
 	hub := NewHub(db)
+	defer hub.Stop()
 	go hub.Run()
 
 	time.Sleep(10 * time.Millisecond)
@@ -256,6 +259,7 @@ func TestWebSocketIntegration(t *testing.T) {
 	defer db.Close()
 
 	hub := NewHub(db)
+	defer hub.Stop()
 	go hub.Run()
 
 	// Create a test server
@@ -298,6 +302,7 @@ func TestMessageSaveToDatabase(t *testing.T) {
 	defer db.Close()
 
 	hub := NewHub(db)
+	defer hub.Stop()
 	go hub.Run()
 
 	time.Sleep(10 * time.Millisecond)
@@ -346,6 +351,7 @@ func TestHandleEncryptedMessageEvent(t *testing.T) {
 	defer db.Close()
 
 	hub := NewHub(db)
+	defer hub.Stop()
 	go hub.Run()
 	time.Sleep(10 * time.Millisecond)
 
@@ -394,6 +400,7 @@ func TestMarkDelivered(t *testing.T) {
 	msgID, _ := result.LastInsertId()
 
 	hub := NewHub(db)
+	defer hub.Stop()
 	go hub.Run()
 
 	time.Sleep(10 * time.Millisecond)
@@ -439,6 +446,7 @@ func TestMarkRead(t *testing.T) {
 	msgID, _ := result.LastInsertId()
 
 	hub := NewHub(db)
+	defer hub.Stop()
 	go hub.Run()
 
 	time.Sleep(10 * time.Millisecond)
@@ -474,6 +482,7 @@ func TestInvalidMessageEvent(t *testing.T) {
 	defer db.Close()
 
 	hub := NewHub(db)
+	defer hub.Stop()
 	go hub.Run()
 
 	client := &Client{
@@ -554,6 +563,7 @@ func TestSignalingForwarding(t *testing.T) {
 	defer db.Close()
 
 	hub := NewHub(db)
+	defer hub.Stop()
 	go hub.Run()
 
 	time.Sleep(10 * time.Millisecond)
@@ -620,6 +630,7 @@ func TestCallRingingSignaling(t *testing.T) {
 	defer db.Close()
 
 	hub := NewHub(db)
+	defer hub.Stop()
 	go hub.Run()
 
 	client1 := &Client{
@@ -663,4 +674,47 @@ func TestCallRingingSignaling(t *testing.T) {
 	default:
 		t.Error("Client1 did not receive the call_ringing event")
 	}
+}
+
+func TestHubStop(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	hub := NewHub(db)
+	done := make(chan struct{})
+	go func() {
+		hub.Run()
+		close(done)
+	}()
+
+	client := &Client{
+		userID: 1,
+		hub:    hub,
+		send:   make(chan interface{}, 256),
+	}
+	hub.register <- client
+
+	time.Sleep(10 * time.Millisecond)
+
+	hub.Stop()
+
+	select {
+	case <-done:
+		// Success, Run() exited cleanly
+	case <-time.After(1 * time.Second):
+		t.Fatal("hub.Run() did not exit after Stop()")
+	}
+
+	// Verify client send channel was closed
+	select {
+	case _, ok := <-client.send:
+		if ok {
+			t.Error("expected client.send channel to be closed")
+		}
+	default:
+		t.Error("expected client.send channel to be closed and readable")
+	}
+
+	// Double Stop should not panic
+	hub.Stop()
 }

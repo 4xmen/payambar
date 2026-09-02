@@ -216,36 +216,45 @@ func TestRegister(t *testing.T) {
 
 	tests := []struct {
 		name       string
+		setup      func()
 		body       map[string]string
 		wantStatus int
 		wantError  bool
 	}{
 		{
 			name:       "valid registration",
+			setup:      clearTestData,
 			body:       map[string]string{"username": "testuser", "password": "password123"},
 			wantStatus: http.StatusCreated,
 			wantError:  false,
 		},
 		{
-			name:       "duplicate username",
+			name: "duplicate username",
+			setup: func() {
+				clearTestData()
+				_, _ = testAuthSvc.Register("testuser", "password123")
+			},
 			body:       map[string]string{"username": "testuser", "password": "password123"},
 			wantStatus: http.StatusBadRequest,
 			wantError:  true,
 		},
 		{
 			name:       "short username",
+			setup:      clearTestData,
 			body:       map[string]string{"username": "ab", "password": "password123"},
 			wantStatus: http.StatusBadRequest,
 			wantError:  true,
 		},
 		{
 			name:       "short password",
+			setup:      clearTestData,
 			body:       map[string]string{"username": "newuser", "password": "12345"},
 			wantStatus: http.StatusBadRequest,
 			wantError:  true,
 		},
 		{
 			name:       "invalid username characters",
+			setup:      clearTestData,
 			body:       map[string]string{"username": "test@user", "password": "password123"},
 			wantStatus: http.StatusBadRequest,
 			wantError:  true,
@@ -254,6 +263,9 @@ func TestRegister(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.setup != nil {
+				tt.setup()
+			}
 			body, _ := json.Marshal(tt.body)
 			req := httptest.NewRequest("POST", "/api/auth/register", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -370,6 +382,7 @@ func TestConversations(t *testing.T) {
 	})
 
 	t.Run("duplicate conversation returns existing", func(t *testing.T) {
+		insertDirectConversation(t, user1ID, user2ID)
 		body, _ := json.Marshal(map[string]int{"participant_id": user2ID})
 		req := httptest.NewRequest("POST", "/api/conversations", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
