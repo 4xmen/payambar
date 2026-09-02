@@ -102,23 +102,6 @@ Payambar is configured using environment variables or a `.env` file located in y
 
 ---
 
-## CLI Commands
-
-You can use the `payambar` binary directly to run the server or check system statistics:
-
-```bash
-# Start the server
-payambar
-
-# View application, database, and storage status
-payambar status
-
-# Output status in JSON format
-payambar status --json
-```
-
----
-
 ## Troubleshooting
 
 - **Service failed to start:** Check the recent logs with `sudo journalctl -u payambar -n 50`.

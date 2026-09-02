@@ -82,6 +82,14 @@ describe('Composables', () => {
       expect(currentConversationId.value).toBeNull();
       expect(chatListOpen.value).toBe(true);
     });
+    it('updates conversation online status via setConversationOnlineStatus', () => {
+      const { conversations, setConversationOnlineStatus } = useConversations();
+      conversations.value = [
+        { id: 1, user_id: 10, username: 'sadegh', is_online: false },
+      ];
+      setConversationOnlineStatus(10, true);
+      expect(conversations.value[0].is_online).toBe(true);
+    });
   });
 
   describe('useMessages', () => {
@@ -148,7 +156,7 @@ describe('Composables', () => {
   describe('useNetworkStatus', () => {
     it('tracks online status and triggers callback', () => {
       let onlineTriggered = false;
-      const { isOffline } = useNetworkStatus({
+      const { isOffline, cleanup } = useNetworkStatus({
         onOnline: () => {
           onlineTriggered = true;
         },
@@ -158,6 +166,40 @@ describe('Composables', () => {
       window.dispatchEvent(new Event('online'));
       expect(onlineTriggered).toBe(true);
       expect(isOffline.value).toBe(false);
+      cleanup();
+    });
+
+    it('tracks offline status and triggers callback', () => {
+      let offlineTriggered = false;
+      const { isOffline, cleanup } = useNetworkStatus({
+        onOffline: () => {
+          offlineTriggered = true;
+        },
+      });
+
+      window.dispatchEvent(new Event('offline'));
+      expect(offlineTriggered).toBe(true);
+      expect(isOffline.value).toBe(true);
+      cleanup();
+    });
+
+    it('syncs isOffline on visibilitychange', () => {
+      let visibleTriggered = false;
+      const { isOffline, cleanup } = useNetworkStatus({
+        onVisible: () => {
+          visibleTriggered = true;
+        },
+      });
+
+      Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(visibleTriggered).toBe(true);
+      expect(isOffline.value).toBe(true);
+
+      Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(isOffline.value).toBe(false);
+      cleanup();
     });
   });
 

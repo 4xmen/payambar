@@ -21,6 +21,9 @@ export function useNetworkStatus(options?: NetworkStatusOptions) {
 
   function handleVisibilityChange() {
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      if (typeof navigator !== 'undefined') {
+        isOffline.value = !navigator.onLine;
+      }
       options?.onVisible?.();
     }
   }

@@ -42,6 +42,9 @@ const ws = useAppWebSocket({
 
 // Network Status Composable
 const { isOffline } = useNetworkStatus({
+  onOffline: () => {
+    ws.closeWebSocket(false);
+  },
   onOnline: () => {
     ws.serverOffline.value = false;
     if (auth.isAuthed.value && auth.token.value) {
@@ -95,8 +98,8 @@ const isProfileModalOpen = ref<boolean>(false);
 
 const userProfileStatusText = computed<string>(() => {
   if (!isAuthed.value) return '';
-  if (wsConnected.value) return 'آنلاین';
   if (isOffline.value) return 'آفلاین';
+  if (wsConnected.value) return 'آنلاین';
   if (wsReconnectAttempts.value >= wsMaxReconnectAttempts) return 'آفلاین';
   return 'در حال اتصال...';
 });

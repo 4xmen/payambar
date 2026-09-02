@@ -222,6 +222,7 @@ export function useAppWebSocket(options?: AppWebSocketOptions) {
       );
 
       if (!isFromMe) {
+        convs.setConversationOnlineStatus(convUser, true);
         if (Number(convs.currentConversationId.value) === convUser) {
           sendWsJson({ type: 'mark_delivered', message_id: data.message_id });
           sendWsJson({ type: 'mark_read', message_id: data.message_id });

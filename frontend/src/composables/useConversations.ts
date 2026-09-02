@@ -211,22 +211,36 @@ function reconcileConversations(
     closeConversation();
   }
 
+  function setConversationOnlineStatus(userId: number, isOnline: boolean): void {
+    const conv = findByUserId(conversations.value, userId);
+    if (conv) {
+      conv.is_online = isOnline;
+    }
+  }
+
   async function startNewConversation(
     token: string,
     userId: number,
-    _username?: string,
-    _displayName?: string,
-    _avatarUrl?: string,
+    username?: string,
+    displayName?: string,
+    avatarUrl?: string,
     isOnline = false
   ): Promise<Conversation> {
     const existing = findByUserId(conversations.value, userId);
     if (existing) {
       existing.is_online = isOnline;
+      if (username && !existing.username) existing.username = username;
+      if (displayName && !existing.display_name) existing.display_name = displayName;
+      if (avatarUrl && !existing.avatar_url) existing.avatar_url = avatarUrl;
       selectConversation(existing);
       return existing;
     }
 
     const created = await createConversation(API_URL, token, userId);
+    created.is_online = isOnline;
+    if (username && !created.username) created.username = username;
+    if (displayName && !created.display_name) created.display_name = displayName;
+    if (avatarUrl && !created.avatar_url) created.avatar_url = avatarUrl;
     conversations.value.unshift(created);
     selectConversation(created);
     return created;
@@ -301,5 +315,6 @@ function reconcileConversations(
     deleteSelectedConversation,
     openConversationMenu,
     closeConversationMenu,
+    setConversationOnlineStatus,
   };
 }
