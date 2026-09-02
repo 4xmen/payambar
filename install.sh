@@ -22,7 +22,13 @@ require_cmd() {
 
 ensure_root() {
   if [ "${EUID}" -ne 0 ]; then
-    exec sudo -E bash "$0" "$@"
+    if [ -f "$0" ]; then
+      exec sudo -E bash "$0" "$@"
+    else
+      echo "[error] This script must be run as root (or with sudo)." >&2
+      echo "[error] Please re-run with: sudo bash ..." >&2
+      exit 1
+    fi
   fi
 }
 
@@ -79,7 +85,7 @@ detect_platform() {
     x86_64|amd64)
       TARGET_ARCH="amd64"
       ;;
-    aarch64|arm64)
+    aarch64|arm64|armv8*)
       TARGET_ARCH="arm64"
       ;;
     *)
@@ -100,8 +106,10 @@ ensure_update_target_exists() {
 generate_jwt_secret() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -hex 32
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import secrets; print(secrets.token_hex(32))'
   else
-    dd if=/dev/urandom bs=32 count=1 2>/dev/null | xxd -p -c 64
+    od -An -N32 -tx1 /dev/urandom 2>/dev/null | tr -d '[:space:]'
   fi
 }
 
@@ -114,11 +122,11 @@ generate_vapid_keys() {
   # Extract raw private key (32 bytes) as base64url
   VAPID_PRIVATE_KEY=$(openssl ec -in "${tmpdir}/vapid_private.pem" -outform DER 2>/dev/null \
     | tail -c +8 | head -c 32 \
-    | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+    | openssl base64 -A | tr '+/' '-_' | tr -d '=\r\n')
   # Extract raw public key (65 bytes, uncompressed) as base64url
   VAPID_PUBLIC_KEY=$(openssl ec -in "${tmpdir}/vapid_private.pem" -pubout -outform DER 2>/dev/null \
     | tail -c 65 \
-    | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+    | openssl base64 -A | tr '+/' '-_' | tr -d '=\r\n')
   rm -rf "${tmpdir}"
 }
 
@@ -130,36 +138,51 @@ is_elf_binary() {
 }
 
 fetch_latest_asset_url() {
-  local url
-  url=$(curl -fsSL \
+  local url=""
+  local api_response=""
+
+  # Try fetching via GitHub API first
+  api_response=$(curl -fsSL \
     -H "Accept: application/vnd.github+json" \
     -H "User-Agent: ${SERVICE_NAME}-installer" \
-    "https://api.github.com/repos/${REPO}/releases/latest" | TARGET_OS="${TARGET_OS}" TARGET_ARCH="${TARGET_ARCH}" python3 -c '
+    "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null) || true
+
+  if [ -n "${api_response}" ]; then
+    url=$(echo "${api_response}" | TARGET_OS="${TARGET_OS}" TARGET_ARCH="${TARGET_ARCH}" python3 -c '
 import json
 import re
 import sys
 import os
 
-data = json.load(sys.stdin)
-assets = data.get("assets") or []
-target_os = os.environ.get("TARGET_OS", "")
-target_arch = os.environ.get("TARGET_ARCH", "")
-patterns = [
-    rf"{target_os}[-_.]?{target_arch}",
-    rf"{target_os}.*{target_arch}",
-    rf"{target_os}[-_.]?(x86_64|amd64|64)" if target_arch == "amd64" else rf"{target_os}[-_.]?(aarch64|arm64)",
-]
-for pat in patterns:
-    if not pat:
-        continue
-    for asset in assets:
-        name = asset.get("name", "")
-        if re.search(pat, name, re.IGNORECASE):
-            print(asset.get("browser_download_url", ""))
-            sys.exit(0)
+try:
+    data = json.load(sys.stdin)
+    assets = data.get("assets") or []
+    target_os = os.environ.get("TARGET_OS", "")
+    target_arch = os.environ.get("TARGET_ARCH", "")
+    patterns = [
+        rf"{target_os}[-_.]?{target_arch}",
+        rf"{target_os}.*{target_arch}",
+        rf"{target_os}[-_.]?(x86_64|amd64|64)" if target_arch == "amd64" else rf"{target_os}[-_.]?(aarch64|arm64)",
+    ]
+    for pat in patterns:
+        for asset in assets:
+            name = asset.get("name", "")
+            if re.search(pat, name, re.IGNORECASE):
+                print(asset.get("browser_download_url", ""))
+                sys.exit(0)
+except Exception:
+    pass
 sys.exit(1)
-'
-  ) || true
+' 2>/dev/null) || true
+  fi
+
+  # Fallback: construct standard release URL if GitHub API was empty, rate-limited, or failed
+  if [ -z "${url}" ]; then
+    local direct_url="https://github.com/${REPO}/releases/latest/download/${SERVICE_NAME}-${TARGET_OS}-${TARGET_ARCH}.zip"
+    if curl -fsIL "${direct_url}" >/dev/null 2>&1; then
+      url="${direct_url}"
+    fi
+  fi
 
   if [ -z "${url}" ]; then
     echo "[error] Could not find a release asset for ${TARGET_OS}/${TARGET_ARCH}." >&2
@@ -184,8 +207,13 @@ download_and_extract() {
       tar -xzf "${archive}" -C "${workdir}"
       ;;
     *.zip)
-      require_cmd unzip
-      unzip -q "${archive}" -d "${workdir}"
+      if command -v unzip >/dev/null 2>&1; then
+        unzip -q "${archive}" -d "${workdir}"
+      elif command -v python3 >/dev/null 2>&1; then
+        python3 -m zipfile -e "${archive}" "${workdir}"
+      else
+        require_cmd unzip
+      fi
       ;;
     *)
       # Assume it's a raw binary
@@ -205,7 +233,7 @@ download_and_extract() {
   while IFS= read -r candidate; do
     [ -n "${candidate}" ] || continue
     case "${candidate}" in
-      *.txt|*.md|*.sha256|*.sha512|*.sum|*.asc|*.sig)
+      *.txt|*.md|*.sha256|*.sha512|*.sum|*.asc|*.sig|*.bin|*.zip|*.tar.gz|*.tgz)
         continue
         ;;
     esac
@@ -220,6 +248,7 @@ EOF
   if [ -z "${bin_path}" ]; then
     echo "[error] Unable to locate payambar binary in downloaded asset." >&2
     echo "[error] Found files were not valid Linux ELF binaries for ${TARGET_OS}/${TARGET_ARCH}." >&2
+    rm -rf "${workdir}"
     exit 1
   fi
   chmod +x "${bin_path}"
@@ -228,8 +257,21 @@ EOF
 }
 
 setup_user_and_dirs() {
+  if ! getent group "${SERVICE_NAME}" >/dev/null 2>&1 && ! id -g "${SERVICE_NAME}" >/dev/null 2>&1; then
+    groupadd --system "${SERVICE_NAME}" 2>/dev/null || true
+  fi
+
   if ! id -u "${SERVICE_NAME}" >/dev/null 2>&1; then
-    useradd --system --home "${DATA_DIR}" --shell /usr/sbin/nologin "${SERVICE_NAME}"
+    local nologin_shell="/usr/sbin/nologin"
+    if [ ! -x "${nologin_shell}" ]; then
+      nologin_shell="/sbin/nologin"
+      if [ ! -x "${nologin_shell}" ]; then
+        nologin_shell="/bin/false"
+      fi
+    fi
+    useradd --system --no-create-home --shell "${nologin_shell}" -g "${SERVICE_NAME}" "${SERVICE_NAME}" 2>/dev/null || \
+    useradd --system --no-create-home --shell "${nologin_shell}" "${SERVICE_NAME}" 2>/dev/null || \
+    useradd --system "${SERVICE_NAME}"
   fi
 
   install -d -m 755 "${INSTALL_DIR}" "${DATA_DIR}" "${UPLOAD_DIR}" "${ENV_DIR}"
@@ -261,7 +303,7 @@ VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
 VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
 EOF
     chmod 640 "${ENV_FILE}"
-    chown root:root "${ENV_FILE}"
+    chown "root:${SERVICE_NAME}" "${ENV_FILE}" 2>/dev/null || chown "root:root" "${ENV_FILE}"
   fi
 }
 
@@ -293,7 +335,7 @@ EOF
 
 start_service() {
   touch "${DATA_DIR}/payambar.db"
-  chown "${SERVICE_NAME}:${SERVICE_NAME}" "${DATA_DIR}/payambar.db"
+  chown -R "${SERVICE_NAME}:${SERVICE_NAME}" "${DATA_DIR}" "${UPLOAD_DIR}"
   systemctl enable "${SERVICE_NAME}"
   if systemctl is-active --quiet "${SERVICE_NAME}"; then
     systemctl restart "${SERVICE_NAME}"
@@ -316,8 +358,10 @@ main() {
   ensure_root "$@"
   require_cmd curl
   require_cmd systemctl
-  require_cmd python3
   require_cmd tar
+  if [ "${ACTION}" = "install" ]; then
+    require_cmd openssl
+  fi
   detect_platform
   ensure_update_target_exists
 
