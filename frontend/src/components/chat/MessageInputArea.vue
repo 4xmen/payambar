@@ -2,9 +2,10 @@
 import { ref } from 'vue';
 import { formatRecordingDuration } from '../../services/funcs';
 
+const messageText = defineModel<string>('messageText', { default: '' });
+
 defineProps<{
   show: boolean;
-  messageText: string;
   recordingVoice: boolean;
   recordingElapsedSec: number;
   uploadingFile: boolean;
@@ -12,7 +13,6 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'update:messageText', text: string): void;
   (e: 'send'): void;
   (e: 'select-file', file: File): void;
   (e: 'toggle-voice'): void;
@@ -20,12 +20,6 @@ const emit = defineEmits<{
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
-
-function onInput(event: Event) {
-  const target = event.target as HTMLTextAreaElement;
-  emit('update:messageText', target.value);
-  resizeTextarea();
-}
 
 function resizeTextarea() {
   const input = textareaRef.value;
@@ -100,8 +94,8 @@ defineExpose({
       <textarea
         ref="textareaRef"
         rows="1"
-        :value="messageText"
-        @input="onInput"
+        v-model="messageText"
+        @input="resizeTextarea"
         @keydown="onKeydown"
         placeholder="پیام..."
       ></textarea>

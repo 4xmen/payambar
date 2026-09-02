@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Conversation, Message, SearchUser } from './types';
-import { API_URL, setUnauthorizedHandler, WS_URL } from './services/api';
-import { canConnect, createConnection, reconnectDelay, shouldReconnect } from './services/ws';
-import { updateMessageStatus } from './services/funcs';
-import { applyIncomingMessage, unreadIncomingIds } from './services/messages';
+import { API_URL, setUnauthorizedHandler } from './services/api';
+import { unreadIncomingIds } from './services/messages';
 import { findByUserId } from './services/conversations';
 
 import { useAuth } from './composables/useAuth';
@@ -13,6 +11,8 @@ import { useMessages } from './composables/useMessages';
 import { useCall } from './composables/useCall';
 import { useE2EE } from './composables/useE2EE';
 import { useToast } from './composables/useToast';
+import { useAppWebSocket } from './composables/useAppWebSocket';
+import { useNetworkStatus } from './composables/useNetworkStatus';
 
 import AuthContainer from './components/auth/AuthContainer.vue';
 import ProfileModal from './components/profile/ProfileModal.vue';
@@ -31,25 +31,70 @@ const call = useCall();
 const e2ee = useE2EE();
 const toast = useToast();
 
+const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null);
+
+// WebSocket Composable
+const ws = useAppWebSocket({
+  onIncomingMessageScroll: () => {
+    chatPanelRef.value?.scrollToBottom();
+  },
+});
+
+// Network Status Composable
+const { isOffline } = useNetworkStatus({
+  onOnline: () => {
+    ws.serverOffline.value = false;
+    if (auth.isAuthed.value && auth.token.value) {
+      convs.loadConversationsList(auth.token.value, msgs.messages);
+      ws.connectWebSocket();
+    }
+  },
+  onVisible: () => {
+    if (auth.isAuthed.value && auth.token.value) {
+      convs.loadConversationsList(auth.token.value, msgs.messages);
+      ws.connectWebSocket();
+    }
+  },
+});
+
+// Destructure reactive state for clean template consumption (avoids .value in template)
+const { isAuthed, token, userId, username, profileDisplayName, myAvatarUrl, showRulesModal } = auth;
+const {
+  chatListOpen,
+  currentConversationId,
+  currentConversation,
+  conversations,
+  filteredConversations,
+  loadingConversations,
+  showNewChatModal,
+  conversationMenu,
+} = convs;
+const {
+  messages,
+  loadingMessages,
+  loadingOlderMessages,
+  messageText,
+  recordingVoice,
+  recordingElapsedSec,
+  uploadingFile,
+  sendingVoice,
+  messageContextMenu,
+  pullToRefresh,
+} = msgs;
+const {
+  activeCall,
+  incomingCall,
+  outgoingCall,
+  callDuration,
+  isMuted,
+} = call;
+const { wsConnected, wsReconnectAttempts, wsMaxReconnectAttempts } = ws;
+
 const appVersion = ref<string>('');
 const isProfileModalOpen = ref<boolean>(false);
 
-// Network / WebSocket State
-const isOffline = ref<boolean>(typeof navigator !== 'undefined' ? !navigator.onLine : false);
-const serverOffline = ref<boolean>(false);
-const wsConnected = ref<boolean>(false);
-const wsReconnectAttempts = ref<number>(0);
-const wsMaxReconnectAttempts = 50;
-const wsReconnectBaseDelay = 1000;
-const wsReconnectMaxDelay = 30000;
-let wsReconnectTimer: any = null;
-let wsIntentionalClose = false;
-let wsInstance: WebSocket | null = null;
-
-const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null);
-
 const userProfileStatusText = computed<string>(() => {
-  if (!auth.isAuthed.value) return '';
+  if (!isAuthed.value) return '';
   if (wsConnected.value) return 'آنلاین';
   if (isOffline.value) return 'آفلاین';
   if (wsReconnectAttempts.value >= wsMaxReconnectAttempts) return 'آفلاین';
@@ -57,12 +102,12 @@ const userProfileStatusText = computed<string>(() => {
 });
 
 const currentMessages = computed<Message[]>(() => {
-  return msgs.getMessagesForUser(convs.currentConversationId.value);
+  return msgs.getMessagesForUser(currentConversationId.value);
 });
 
 const hasMoreCurrent = computed<boolean>(() => {
-  if (!convs.currentConversationId.value) return false;
-  return Boolean(msgs.hasMoreMessages[convs.currentConversationId.value]);
+  if (!currentConversationId.value) return false;
+  return Boolean(msgs.hasMoreMessages[currentConversationId.value]);
 });
 
 // Fetch App Version
@@ -78,234 +123,24 @@ async function fetchAppVersion() {
   }
 }
 
-// WebSocket Connection
-function sendWsJson(payload: Record<string, unknown>) {
-  if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
-    wsInstance.send(JSON.stringify(payload));
-  }
-}
-
-function closeWebSocket(intentional = true) {
-  wsIntentionalClose = intentional;
-  wsConnected.value = false;
-  if (wsReconnectTimer) {
-    clearTimeout(wsReconnectTimer);
-    wsReconnectTimer = null;
-  }
-  if (wsInstance) {
-    try {
-      wsInstance.close();
-    } catch {}
-    wsInstance = null;
-  }
-  if (intentional) {
-    wsReconnectAttempts.value = 0;
-    serverOffline.value = false;
-  }
-}
-
-function connectWebSocket() {
-  if (
-    !canConnect({
-      isAuthed: auth.isAuthed.value,
-      token: auth.token.value,
-      existingWs: wsInstance,
-    })
-  ) {
-    return;
-  }
-  if (wsReconnectTimer) {
-    clearTimeout(wsReconnectTimer);
-    wsReconnectTimer = null;
-  }
-  wsIntentionalClose = false;
-  wsConnected.value = false;
-
-  wsInstance = createConnection({
-    wsUrl: WS_URL,
-    token: auth.token.value!,
-    onOpen: () => {
-      wsReconnectAttempts.value = 0;
-      serverOffline.value = false;
-      wsConnected.value = true;
-    },
-    onMessage: (data) => {
-      handleWebSocketMessage(data);
-    },
-    onError: () => {
-      if (!auth.isAuthed.value || wsIntentionalClose) return;
-      serverOffline.value = true;
-      wsConnected.value = false;
-    },
-    onClose: () => {
-      const intentionalClose = wsIntentionalClose;
-      wsInstance = null;
-      wsConnected.value = false;
-      if (
-        !shouldReconnect({
-          isAuthed: auth.isAuthed.value,
-          intentionalClose: intentionalClose || !auth.isAuthed.value,
-          attempts: wsReconnectAttempts.value,
-          maxAttempts: wsMaxReconnectAttempts,
-        })
-      ) {
-        if (intentionalClose || !auth.isAuthed.value) {
-          wsIntentionalClose = false;
-        }
-        if (!intentionalClose && auth.isAuthed.value) {
-          serverOffline.value = true;
-        }
-        return;
-      }
-      serverOffline.value = true;
-      wsReconnectAttempts.value++;
-      const delay = reconnectDelay(
-        wsReconnectAttempts.value,
-        wsReconnectBaseDelay,
-        wsReconnectMaxDelay
-      );
-      wsReconnectTimer = setTimeout(() => {
-        wsReconnectTimer = null;
-        connectWebSocket();
-      }, delay);
-    },
-  });
-}
-
-// WebSocket incoming event handler
-async function handleWebSocketMessage(data: any) {
-  if (data.type === 'call_offer') {
-    if (call.activeCall.value || call.incomingCall.value || call.outgoingCall.value) {
-      sendWsJson({
-        type: 'call_reject',
-        receiver_id: Number(data.sender_id),
-        payload: { reason: 'busy' },
-      });
-      return;
-    }
-    const found = findByUserId(convs.conversations.value, data.sender_id);
-    const sender = found || {
-      id: 0,
-      username: 'کاربر',
-      user_id: data.sender_id,
-      display_name: '',
-      avatar_url: null,
-    };
-
-    call.setIncomingCall({
-      sender_id: Number(data.sender_id),
-      username: sender.username,
-      displayName: sender.display_name,
-      avatar_url: sender.avatar_url,
-      offer: data.payload.offer,
-    });
-
-    // Notify caller that we are actively ringing!
-    sendWsJson({
-      type: 'call_ringing',
-      receiver_id: Number(data.sender_id),
-    });
-
-    if (call.pendingAutoAnswer.value) {
-      call.pendingAutoAnswer.value = false;
-      nextTick(() => {
-        call.acceptCall(sendWsJson);
-      });
-    }
-  } else if (data.type === 'call_ringing') {
-    if (
-      call.outgoingCall.value &&
-      Number(call.outgoingCall.value.receiver_id) === Number(data.sender_id)
-    ) {
-      call.handleCallRinging();
-    }
-  } else if (data.type === 'call_answer') {
-    if (
-      call.outgoingCall.value &&
-      Number(call.outgoingCall.value.receiver_id) === Number(data.sender_id)
-    ) {
-      await call.handleCallAnswer(data.payload.answer);
-    }
-  } else if (data.type === 'ice_candidate') {
-    await call.handleIncomingIceCandidate(data.payload?.candidate);
-  } else if (data.type === 'call_reject') {
-    if (
-      call.outgoingCall.value &&
-      Number(call.outgoingCall.value.receiver_id) === Number(data.sender_id)
-    ) {
-      const isBusy = data.payload?.reason === 'busy';
-      toast.showToast(isBusy ? 'کاربر در حال مکالمه است' : 'تماس رد شد');
-      call.endCall({ isInitiator: false, sendWsMessage: sendWsJson });
-    }
-  } else if (data.type === 'call_hangup') {
-    if (
-      (call.activeCall.value && Number(call.activeCall.value.user_id) === Number(data.sender_id)) ||
-      (call.incomingCall.value && Number(call.incomingCall.value.sender_id) === Number(data.sender_id)) ||
-      (call.outgoingCall.value && Number(call.outgoingCall.value.receiver_id) === Number(data.sender_id))
-    ) {
-      call.endCall({ isInitiator: false, sendWsMessage: sendWsJson });
-    }
-  } else if (data.type === 'message') {
-    const normalizedMessage = await e2ee.maybeDecryptMessage(
-      auth.token.value || '',
-      auth.userId.value || 0,
-      data
-    );
-    const incomingContent = normalizedMessage.content;
-    const senderId = Number(data.sender_id);
-    const isFromMe = senderId === Number(auth.userId.value);
-    const { convUser } = applyIncomingMessage(
-      msgs.messages,
-      auth.userId.value || 0,
-      data,
-      incomingContent
-    );
-
-    convs.updateConversationLastMessage(
-      convUser,
-      data.created_at || new Date().toISOString(),
-      msgs.messages
-    );
-
-    if (!isFromMe) {
-      if (Number(convs.currentConversationId.value) === convUser) {
-        sendWsJson({ type: 'mark_delivered', message_id: data.message_id });
-        sendWsJson({ type: 'mark_read', message_id: data.message_id });
-        nextTick(() => {
-          chatPanelRef.value?.scrollToBottom();
-        });
-      } else {
-        sendWsJson({ type: 'mark_delivered', message_id: data.message_id });
-        convs.loadConversationsList(auth.token.value || '', msgs.messages);
-      }
-    } else {
-      nextTick(() => {
-        chatPanelRef.value?.scrollToBottom();
-      });
-    }
-  } else if (data.type === 'status_update') {
-    updateMessageStatus(msgs.messages, data.message_id, data.status);
-  }
-}
-
 // Conversation Selection and Message Loading
 async function onSelectConversation(conv: Conversation) {
   convs.selectConversation(conv);
   pushHistory('chat', String(conv.user_id));
   const loaded = await msgs.loadConversationMessages(
-    auth.token.value || '',
+    token.value || '',
     conv.user_id,
-    (mList) => e2ee.decryptMessageList(auth.token.value || '', auth.userId.value || 0, mList)
+    (mList) => e2ee.decryptMessageList(token.value || '', userId.value || 0, mList)
   );
 
   const latest = loaded.length ? loaded[loaded.length - 1] : null;
   if (latest?.created_at) {
-    convs.updateConversationLastMessage(conv.user_id, latest.created_at, msgs.messages);
+    convs.updateConversationLastMessage(conv.user_id, latest.created_at, messages);
   }
 
   if (wsConnected.value) {
-    for (const msgId of unreadIncomingIds(loaded, auth.userId.value || 0)) {
-      sendWsJson({ type: 'mark_read', message_id: msgId });
+    for (const msgId of unreadIncomingIds(loaded, userId.value || 0)) {
+      ws.sendWsJson({ type: 'mark_read', message_id: msgId });
     }
   }
 
@@ -319,34 +154,34 @@ async function onSelectConversation(conv: Conversation) {
 
 // Sending Messages
 async function onSendMessage() {
-  const content = (msgs.messageText.value || '').trim();
+  const content = (messageText.value || '').trim();
   if (
     !content ||
-    !convs.currentConversationId.value ||
-    !auth.userId.value ||
-    !auth.token.value ||
+    !currentConversationId.value ||
+    !userId.value ||
+    !token.value ||
     !wsConnected.value
   ) {
     return;
   }
 
-  const receiverId = Number(convs.currentConversationId.value);
+  const receiverId = Number(currentConversationId.value);
   const clientMessageId = `client-${Date.now()}`;
 
   const optimistic = msgs.sendTextMessageOptimistic({
-    myUserId: auth.userId.value,
+    myUserId: userId.value,
     receiverId,
     content,
     clientMessageId,
   });
 
-  convs.updateConversationLastMessage(receiverId, optimistic.created_at, msgs.messages);
-  msgs.messageText.value = '';
-  convs.chatListOpen.value = false;
+  convs.updateConversationLastMessage(receiverId, optimistic.created_at, messages);
+  messageText.value = '';
+  chatListOpen.value = false;
 
   let encryptedPayload: any = null;
   try {
-    encryptedPayload = await e2ee.encryptTextMessage(auth.token.value, receiverId, content);
+    encryptedPayload = await e2ee.encryptTextMessage(token.value, receiverId, content);
   } catch (err) {
     console.warn('Encryption error, sending plaintext:', err);
   }
@@ -364,7 +199,7 @@ async function onSendMessage() {
     ...(encryptedPayload || {}),
   };
 
-  sendWsJson(payload);
+  ws.sendWsJson(payload);
 
   nextTick(() => {
     chatPanelRef.value?.scrollToBottom();
@@ -373,27 +208,27 @@ async function onSendMessage() {
 }
 
 async function onSelectFile(file: File) {
-  if (!convs.currentConversationId.value || !auth.token.value || !auth.userId.value) return;
-  const receiverId = Number(convs.currentConversationId.value);
+  if (!currentConversationId.value || !token.value || !userId.value) return;
+  const receiverId = Number(currentConversationId.value);
   const msg = await msgs.uploadFileMessage({
-    token: auth.token.value,
+    token: token.value,
     receiverId,
-    myUserId: auth.userId.value,
+    myUserId: userId.value,
     file,
     isWsOpen: wsConnected.value,
   });
   if (msg) {
-    convs.updateConversationLastMessage(receiverId, msg.created_at, msgs.messages);
+    convs.updateConversationLastMessage(receiverId, msg.created_at, messages);
     nextTick(() => chatPanelRef.value?.scrollToBottom());
   }
-  convs.loadConversationsList(auth.token.value, msgs.messages);
+  convs.loadConversationsList(token.value, messages);
 }
 
 async function onToggleVoice() {
-  if (!convs.currentConversationId.value || msgs.uploadingFile.value || msgs.sendingVoice.value) {
+  if (!currentConversationId.value || uploadingFile.value || sendingVoice.value) {
     return;
   }
-  if (msgs.recordingVoice.value) {
+  if (recordingVoice.value) {
     msgs.stopVoiceRecordingAndSend(async (file) => {
       await onSelectFile(file);
     });
@@ -404,9 +239,9 @@ async function onToggleVoice() {
 
 async function onLoadOlder() {
   if (
-    !convs.currentConversationId.value ||
-    !auth.token.value ||
-    msgs.loadingOlderMessages.value
+    !currentConversationId.value ||
+    !token.value ||
+    loadingOlderMessages.value
   ) {
     return;
   }
@@ -415,9 +250,9 @@ async function onLoadOlder() {
   const oldScrollTop = container ? container.scrollTop : 0;
 
   const older = await msgs.loadOlderMessages(
-    auth.token.value,
-    convs.currentConversationId.value,
-    (mList) => e2ee.decryptMessageList(auth.token.value || '', auth.userId.value || 0, mList)
+    token.value,
+    currentConversationId.value,
+    (mList) => e2ee.decryptMessageList(token.value || '', userId.value || 0, mList)
   );
 
   if (older && older.length > 0) {
@@ -431,19 +266,19 @@ async function onLoadOlder() {
 }
 
 async function onRefreshConversation(options: { keepScroll?: boolean } = {}) {
-  if (!convs.currentConversationId.value || !auth.token.value) return;
-  const convUserId = convs.currentConversationId.value;
+  if (!currentConversationId.value || !token.value) return;
+  const convUserId = currentConversationId.value;
   const container = chatPanelRef.value?.getContainerEl?.() || null;
   const wasNearBottom = msgs.isNearBottom(container);
 
   const loaded = await msgs.loadConversationMessages(
-    auth.token.value,
+    token.value,
     convUserId,
-    (mList) => e2ee.decryptMessageList(auth.token.value || '', auth.userId.value || 0, mList)
+    (mList) => e2ee.decryptMessageList(token.value || '', userId.value || 0, mList)
   );
   const latest = loaded.length ? loaded[loaded.length - 1] : null;
   if (latest?.created_at) {
-    convs.updateConversationLastMessage(convUserId, latest.created_at, msgs.messages);
+    convs.updateConversationLastMessage(convUserId, latest.created_at, messages);
   }
 
   if (!options.keepScroll || wasNearBottom) {
@@ -455,7 +290,7 @@ async function onRefreshConversation(options: { keepScroll?: boolean } = {}) {
 
 function onPullStart(event: TouchEvent | MouseEvent) {
   const container = chatPanelRef.value?.getContainerEl?.() || null;
-  msgs.handlePullStart(event, container, convs.currentConversationId.value);
+  msgs.handlePullStart(event, container, currentConversationId.value);
 }
 
 function onPullMove(event: TouchEvent | MouseEvent) {
@@ -469,49 +304,49 @@ function onPullEnd() {
 }
 
 function onStartCall() {
-  if (!convs.currentConversation.value) return;
-  const c = convs.currentConversation.value;
+  if (!currentConversation.value) return;
+  const c = currentConversation.value;
   call.startCall({
     receiverId: c.user_id,
     username: c.username,
     displayName: c.display_name,
     avatarUrl: c.avatar_url,
-    sendWsMessage: sendWsJson,
+    sendWsMessage: ws.sendWsJson,
     onSaveCallLog: (otherUserId, logText) => {
-      sendWsJson({ type: 'message', receiver_id: otherUserId, content: logText });
+      ws.sendWsJson({ type: 'message', receiver_id: otherUserId, content: logText });
     },
   });
 }
 
 function onAcceptCall() {
-  call.acceptCall(sendWsJson);
+  call.acceptCall(ws.sendWsJson);
 }
 
 function onRejectCall() {
-  call.rejectCall(sendWsJson, (otherUserId, logText) => {
-    sendWsJson({ type: 'message', receiver_id: otherUserId, content: logText });
+  call.rejectCall(ws.sendWsJson, (otherUserId, logText) => {
+    ws.sendWsJson({ type: 'message', receiver_id: otherUserId, content: logText });
   });
 }
 
 function onHangupCall() {
   call.endCall({
     isInitiator: true,
-    sendWsMessage: sendWsJson,
+    sendWsMessage: ws.sendWsJson,
     onSaveCallLog: (otherUserId, logText) => {
-      sendWsJson({ type: 'message', receiver_id: otherUserId, content: logText });
+      ws.sendWsJson({ type: 'message', receiver_id: otherUserId, content: logText });
     },
   });
 }
 
 function returnToActiveCallChat() {
-  if (!call.activeCall.value) return;
-  const targetId = Number(call.activeCall.value.user_id);
-  const target = findByUserId(convs.conversations.value, targetId) || {
+  if (!activeCall.value) return;
+  const targetId = Number(activeCall.value.user_id);
+  const target = findByUserId(conversations.value, targetId) || {
     id: 0,
     user_id: targetId,
-    username: call.activeCall.value.username,
-    display_name: call.activeCall.value.displayName,
-    avatar_url: call.activeCall.value.avatar_url,
+    username: activeCall.value.username,
+    display_name: activeCall.value.displayName,
+    avatar_url: activeCall.value.avatar_url,
   };
   onSelectConversation(target);
 }
@@ -531,10 +366,10 @@ async function onCopyMessage(msg: Message) {
 
 async function onDeleteMessage(msg: Message) {
   msgs.closeMessageContextMenu();
-  if (!msg.id || !convs.currentConversationId.value || !auth.token.value) return;
+  if (!msg.id || !currentConversationId.value || !token.value) return;
   if (!confirm('آیا از حذف این پیام اطمینان دارید؟')) return;
   try {
-    await msgs.deleteMessageById(auth.token.value, convs.currentConversationId.value, msg.id);
+    await msgs.deleteMessageById(token.value, currentConversationId.value, msg.id);
   } catch {
     alert('خطا در حذف پیام');
   }
@@ -542,22 +377,22 @@ async function onDeleteMessage(msg: Message) {
 
 async function onDeleteConversation(conv: Conversation) {
   convs.closeConversationMenu();
-  if (!conv || !conv.id || !auth.token.value) return;
+  if (!conv || !conv.id || !token.value) return;
   if (!confirm('آیا از حذف این مکالمه اطمینان دارید؟')) return;
   try {
-    await convs.deleteSelectedConversation(auth.token.value, conv);
-    delete msgs.messages[conv.user_id];
+    await convs.deleteSelectedConversation(token.value, conv);
+    delete messages[conv.user_id];
   } catch {
     alert('خطا در حذف مکالمه');
   }
 }
 
 async function onSelectNewChatUser(user: SearchUser) {
-  convs.showNewChatModal.value = false;
-  if (!auth.token.value) return;
+  showNewChatModal.value = false;
+  if (!token.value) return;
   try {
     const created = await convs.startNewConversation(
-      auth.token.value,
+      token.value,
       user.id,
       user.username,
       user.displayName,
@@ -579,33 +414,33 @@ function onGlobalClick() {
 let isAuthenticating = false;
 
 async function onAuthenticated() {
-  if (!auth.token.value || !auth.userId.value || isAuthenticating) return;
+  if (!token.value || !userId.value || isAuthenticating) return;
   isAuthenticating = true;
 
   try {
     // 1. Connect WebSocket right away so status updates immediately
-    connectWebSocket();
+    ws.connectWebSocket();
 
     // 2. Load conversations and profile in parallel
     await Promise.allSettled([
-      convs.loadConversationsList(auth.token.value, msgs.messages),
+      convs.loadConversationsList(token.value, messages),
       auth.loadMyProfile(),
-      call.loadWebRTCConfig(auth.token.value),
+      call.loadWebRTCConfig(token.value),
     ]);
 
     // 3. Initialize E2EE in the background and hydrate encrypted previews
     e2ee
       .ensureE2EEReady(
-        auth.token.value,
-        auth.userId.value,
+        token.value,
+        userId.value,
         auth.authPassword.value
       )
       .then(() => {
-        if (auth.token.value && auth.userId.value) {
+        if (token.value && userId.value) {
           convs.hydrateEncryptedConversationPreviews(
-            auth.token.value,
-            msgs.messages,
-            (mList) => e2ee.decryptMessageList(auth.token.value!, auth.userId.value!, mList)
+            token.value,
+            messages,
+            (mList) => e2ee.decryptMessageList(token.value!, userId.value!, mList)
           );
         }
       })
@@ -618,7 +453,7 @@ async function onAuthenticated() {
 }
 
 watch(
-  () => auth.isAuthed.value,
+  () => isAuthed.value,
   async (authed) => {
     if (authed) {
       await onAuthenticated();
@@ -629,8 +464,8 @@ watch(
 function onLogout() {
   auth.clearAuth();
   convs.closeConversation();
-  convs.conversations.value = [];
-  closeWebSocket(true);
+  conversations.value = [];
+  ws.closeWebSocket(true);
   e2ee.resetE2EEState();
 }
 
@@ -641,7 +476,7 @@ function pushHistory(type: 'chat' | 'modal', name: string) {
 }
 
 function handlePopState() {
-  if (msgs.messageContextMenu.show || convs.conversationMenu.show) {
+  if (messageContextMenu.show || conversationMenu.show) {
     msgs.closeMessageContextMenu();
     convs.closeConversationMenu();
   }
@@ -650,16 +485,16 @@ function handlePopState() {
     isProfileModalOpen.value = false;
     return;
   }
-  if (convs.showNewChatModal.value) {
-    convs.showNewChatModal.value = false;
+  if (showNewChatModal.value) {
+    showNewChatModal.value = false;
     return;
   }
-  if (auth.showRulesModal.value) {
-    auth.showRulesModal.value = false;
+  if (showRulesModal.value) {
+    showRulesModal.value = false;
     return;
   }
 
-  if (convs.currentConversationId.value && !convs.chatListOpen.value) {
+  if (currentConversationId.value && !chatListOpen.value) {
     convs.closeConversation();
   }
 }
@@ -686,7 +521,7 @@ function closeProfileModal() {
 }
 
 function openNewChatModal() {
-  convs.showNewChatModal.value = true;
+  showNewChatModal.value = true;
   pushHistory('modal', 'new-chat');
 }
 
@@ -694,7 +529,7 @@ function closeNewChatModal() {
   if (typeof window !== 'undefined' && window.history.state?.type === 'modal') {
     window.history.back();
   } else {
-    convs.showNewChatModal.value = false;
+    showNewChatModal.value = false;
   }
 }
 
@@ -705,29 +540,9 @@ onMounted(async () => {
   window.addEventListener('popstate', handlePopState);
   await fetchAppVersion();
 
-  if (auth.isAuthed.value) {
+  if (isAuthed.value) {
     await onAuthenticated();
   }
-
-  window.addEventListener('online', () => {
-    isOffline.value = false;
-    serverOffline.value = false;
-    if (auth.isAuthed.value && auth.token.value) {
-      convs.loadConversationsList(auth.token.value, msgs.messages);
-      connectWebSocket();
-    }
-  });
-
-  window.addEventListener('offline', () => {
-    isOffline.value = true;
-  });
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && auth.isAuthed.value && auth.token.value) {
-      convs.loadConversationsList(auth.token.value, msgs.messages);
-      connectWebSocket();
-    }
-  });
 });
 
 onBeforeUnmount(() => {
@@ -735,7 +550,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', onGlobalClick);
   window.removeEventListener('popstate', handlePopState);
   msgs.cleanupVoiceRecorder();
-  closeWebSocket(true);
+  ws.closeWebSocket(true);
 });
 </script>
 
@@ -743,7 +558,7 @@ onBeforeUnmount(() => {
   <div id="app">
     <!-- Unauthenticated Flow -->
     <AuthContainer
-      v-if="!auth.isAuthed.value"
+      v-if="!isAuthed"
       :app-version="appVersion"
       @authenticated="onAuthenticated"
     />
@@ -752,12 +567,12 @@ onBeforeUnmount(() => {
     <div class="messenger-wrapper" v-else>
       <!-- Global Active Call Banner -->
       <ActiveCallBar
-        v-if="call.activeCall.value"
-        :active-call="call.activeCall.value"
-        :call-duration="call.callDuration.value"
-        :chat-list-open="convs.chatListOpen.value"
-        :current-conversation-id="convs.currentConversationId.value"
-        :is-muted="call.isMuted.value"
+        v-if="activeCall"
+        :active-call="activeCall"
+        :call-duration="callDuration"
+        :chat-list-open="chatListOpen"
+        :current-conversation-id="currentConversationId"
+        :is-muted="isMuted"
         @return-to-chat="returnToActiveCallChat"
         @hangup="onHangupCall"
         @toggle-mute="call.toggleMute"
@@ -766,18 +581,18 @@ onBeforeUnmount(() => {
       <div class="messenger-container">
         <!-- Left Panel: Chat List -->
         <ChatListPanel
-          :chat-list-open="convs.chatListOpen.value"
-          :avatar-url="auth.myAvatarUrl.value"
-          :username="auth.username.value"
-          :display-name="auth.profileDisplayName.value"
+          :chat-list-open="chatListOpen"
+          :avatar-url="myAvatarUrl"
+          :username="username"
+          :display-name="profileDisplayName"
           :status-text="userProfileStatusText"
-          :loading-conversations="convs.loadingConversations.value"
-          :filtered-conversations="convs.filteredConversations.value"
-          :current-conversation-id="convs.currentConversationId.value"
-          :messages-by-user="msgs.messages"
-          :conversation-menu="convs.conversationMenu"
-          :show-new-chat-modal="convs.showNewChatModal.value"
-          :token="auth.token.value"
+          :loading-conversations="loadingConversations"
+          :filtered-conversations="filteredConversations"
+          :current-conversation-id="currentConversationId"
+          :messages-by-user="messages"
+          :conversation-menu="conversationMenu"
+          :show-new-chat-modal="showNewChatModal"
+          :token="token"
           @open-profile="openProfileModal"
           @select-conversation="onSelectConversation"
           @open-conversation-menu="(ev, c) => convs.openConversationMenu(ev, c)"
@@ -791,25 +606,25 @@ onBeforeUnmount(() => {
         <!-- Right Panel: Active Chat -->
         <ChatPanel
           ref="chatPanelRef"
-          :chat-list-open="convs.chatListOpen.value"
-          :conversation="convs.currentConversation.value"
-          :current-conversation-id="convs.currentConversationId.value"
-          :loading-messages="msgs.loadingMessages.value"
-          :loading-older-messages="msgs.loadingOlderMessages.value"
+          :chat-list-open="chatListOpen"
+          :conversation="currentConversation"
+          :current-conversation-id="currentConversationId"
+          :loading-messages="loadingMessages"
+          :loading-older-messages="loadingOlderMessages"
           :has-more="hasMoreCurrent"
           :messages="currentMessages"
-          :my-user-id="auth.userId.value"
-          :message-context-menu="msgs.messageContextMenu"
-          :pull-to-refresh="msgs.pullToRefresh"
-          v-model:message-text="msgs.messageText.value"
-          :recording-voice="msgs.recordingVoice.value"
-          :recording-elapsed-sec="msgs.recordingElapsedSec.value"
-          :uploading-file="msgs.uploadingFile.value"
-          :sending-voice="msgs.sendingVoice.value"
+          :my-user-id="userId"
+          :message-context-menu="messageContextMenu"
+          :pull-to-refresh="pullToRefresh"
+          v-model:message-text="messageText"
+          :recording-voice="recordingVoice"
+          :recording-elapsed-sec="recordingElapsedSec"
+          :uploading-file="uploadingFile"
+          :sending-voice="sendingVoice"
           @back="onBackFromChat"
           @start-call="onStartCall"
           @load-older="onLoadOlder"
-          @open-message-menu="(ev, m) => msgs.openMessageContextMenu(ev, m, auth.userId.value)"
+          @open-message-menu="(ev, m) => msgs.openMessageContextMenu(ev, m, userId)"
           @close-message-menu="msgs.closeMessageContextMenu"
           @copy-message="onCopyMessage"
           @delete-message="onDeleteMessage"
@@ -832,15 +647,15 @@ onBeforeUnmount(() => {
 
       <!-- Call Modals -->
       <IncomingCallModal
-        v-if="call.incomingCall.value"
-        :incoming-call="call.incomingCall.value"
+        v-if="incomingCall"
+        :incoming-call="incomingCall"
         @accept="onAcceptCall"
         @reject="onRejectCall"
       />
 
       <OutgoingCallModal
-        v-if="call.outgoingCall.value"
-        :outgoing-call="call.outgoingCall.value"
+        v-if="outgoingCall"
+        :outgoing-call="outgoingCall"
         @cancel="onHangupCall"
       />
     </div>

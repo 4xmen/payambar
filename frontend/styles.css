@@ -2022,8 +2022,9 @@ dialog.modal[open]::backdrop {
 
 .profile-modal-footer {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
-    padding: 0.875rem 1.25rem;
+    padding: var(--space-4) var(--space-6);
     border-top: 1px solid var(--border);
     background: var(--surface-muted);
     flex-shrink: 0;
@@ -2031,19 +2032,48 @@ dialog.modal[open]::backdrop {
 
 .profile-footer-actions {
     display: flex;
-    gap: 0.5rem;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    width: 100%;
+}
+
+.profile-footer-actions form {
+    margin: 0;
+    display: inline-flex;
 }
 
 /* --- New Chat / User Search --- */
 .search-user-container {
-    padding: 0.875rem 1.25rem;
+    padding: var(--space-4) var(--space-6);
     border-bottom: 1px solid var(--border);
     background: var(--surface);
 }
 
+.search-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.search-input-wrapper .search-icon {
+    position: absolute;
+    right: 0.85rem;
+    width: 18px;
+    height: 18px;
+    color: var(--muted-light);
+    pointer-events: none;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
 .search-user-input {
     width: 100%;
-    padding: 0.65rem 0.95rem;
+    padding: 0.65rem 2.4rem 0.65rem 0.95rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     font-size: 0.9375rem;
@@ -2066,16 +2096,29 @@ dialog.modal[open]::backdrop {
 .users-list {
     flex: 1;
     overflow-y: auto;
-    max-height: 320px;
+    max-height: 340px;
+    min-height: 180px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
 .users-list .search-hint,
 .users-list .searching,
 .users-list .empty {
-    padding: 2.5rem 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1.5rem;
     text-align: center;
     color: var(--muted);
     font-size: 0.875rem;
+}
+
+.user-list-item {
+    margin: 0;
+    padding: 0;
+    list-style: none;
 }
 
 .user-item {
@@ -2471,6 +2514,10 @@ dialog.modal[open]::backdrop {
         max-height: 80vh;
         width: 100%;
         animation: modalSlideUp 0.28s var(--ease-out);
+    }
+
+    .profile-modal-footer {
+        padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
     }
 
     @keyframes modalSlideUp {

@@ -14,6 +14,7 @@ const emit = defineEmits<{
   (e: 'select-user', user: SearchUser): void;
 }>();
 
+const dialogRef = ref<HTMLDialogElement | null>(null);
 const searchInputRef = ref<HTMLInputElement | null>(null);
 const searchQuery = ref<string>('');
 const searchResults = ref<any[]>([]);
@@ -31,6 +32,9 @@ watch(
       searchResults.value = [];
       searchError.value = '';
       searchLoading.value = false;
+      if (dialogRef.value && !dialogRef.value.open) {
+        dialogRef.value.showModal();
+      }
       nextTick(() => {
         searchInputRef.value?.focus();
       });
@@ -39,9 +43,31 @@ watch(
         clearTimeout(searchTimeout);
         searchTimeout = null;
       }
+      if (dialogRef.value?.open) {
+        dialogRef.value.close();
+      }
     }
   }
 );
+
+function closeModal() {
+  if (dialogRef.value?.open) {
+    dialogRef.value.close();
+  } else {
+    emit('close');
+  }
+}
+
+function handleNativeClose() {
+  emit('close');
+}
+
+function handleBackdropClick(e: MouseEvent) {
+  // Native HTML <dialog> backdrop click: event.target is the dialog element itself
+  if (dialogRef.value && e.target === dialogRef.value) {
+    closeModal();
+  }
+}
 
 function onInput() {
   const q = searchQuery.value.trim();
@@ -81,44 +107,78 @@ async function executeSearch(query: string) {
 }
 
 function selectSearchedUser(user: SearchUser) {
+  closeModal();
   emit('select-user', user);
 }
 </script>
 
 <template>
-  <div v-if="isOpen" class="modal" @click.self="emit('close')">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>مکالمه جدید</h3>
-        <button type="button" class="close-btn" @click="emit('close')" aria-label="بستن">
-          ×
-        </button>
-      </div>
+  <dialog
+    id="new-chat-modal"
+    ref="dialogRef"
+    class="modal"
+    aria-labelledby="new-chat-title"
+    @cancel.prevent="closeModal"
+    @close="handleNativeClose"
+    @click="handleBackdropClick"
+  >
+    <div class="modal-content" tabindex="-1" autofocus>
+      <header class="modal-header">
+        <h3 id="new-chat-title">مکالمه جدید</h3>
+        <form method="dialog">
+          <button type="submit" class="close-btn" aria-label="بستن">
+            <svg class="icon-svg" viewBox="0 0 24 24">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </form>
+      </header>
 
       <div class="search-user-container">
-        <input
-          type="text"
-          ref="searchInputRef"
-          class="search-user-input"
-          v-model="searchQuery"
-          @input="onInput"
-          placeholder="نام کاربری را جستجو کنید..."
-        />
+        <div class="search-input-wrapper">
+          <svg class="search-icon" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input
+            type="search"
+            ref="searchInputRef"
+            class="search-user-input"
+            v-model="searchQuery"
+            @input="onInput"
+            placeholder="نام کاربری را جستجو کنید..."
+            autocomplete="off"
+            spellcheck="false"
+            autofocus
+          />
+        </div>
       </div>
 
-      <div class="users-list">
-        <p v-if="!searchQuery.trim()" class="search-hint">نام کاربری را وارد کنید</p>
-        <p v-else-if="searchLoading" class="searching">در حال جستجو...</p>
-        <p v-else-if="searchError" class="empty">{{ searchError }}</p>
-        <p v-else-if="searchResults.length === 0" class="empty">کاربری یافت نشد</p>
-        <UserSearchItem
+      <ul class="users-list" role="list">
+        <li v-if="!searchQuery.trim()" class="search-hint">
+          <span>حداقل ۳ حرف برای جستجو وارد کنید</span>
+        </li>
+        <li v-else-if="searchLoading" class="searching">
+          <span>در حال جستجو...</span>
+        </li>
+        <li v-else-if="searchError" class="empty">
+          <span>{{ searchError }}</span>
+        </li>
+        <li v-else-if="searchResults.length === 0" class="empty">
+          <span>کاربری یافت نشد</span>
+        </li>
+        <li
           v-else
           v-for="user in searchResults"
           :key="user.id"
-          :user="user"
-          @select="selectSearchedUser"
-        />
-      </div>
+          class="user-list-item"
+        >
+          <UserSearchItem
+            :user="user"
+            @select="selectSearchedUser"
+          />
+        </li>
+      </ul>
     </div>
-  </div>
+  </dialog>
 </template>

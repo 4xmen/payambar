@@ -9,6 +9,9 @@ import UserSearchItem from '@/components/chat/UserSearchItem.vue';
 import ChatHeader from '@/components/chat/ChatHeader.vue';
 import MessageItem from '@/components/chat/MessageItem.vue';
 import ActiveCallBar from '@/components/call/ActiveCallBar.vue';
+import ProfileModal from '@/components/profile/ProfileModal.vue';
+import AboutTab from '@/components/profile/tabs/AboutTab.vue';
+import NewChatModal from '@/components/chat/NewChatModal.vue';
 import type { Conversation, Message } from '@/types';
 
 describe('Component Unit Tests', () => {
@@ -280,6 +283,56 @@ describe('Component Unit Tests', () => {
       const hangupBtn = wrapper.find('.btn-hangup');
       await hangupBtn.trigger('click');
       expect(wrapper.emitted('hangup')).toBeTruthy();
+    });
+  });
+
+  describe('AboutTab.vue', () => {
+    it('renders application version and title', () => {
+      const wrapper = mount(AboutTab, {
+        props: {
+          appVersion: '1.2.3',
+        },
+      });
+
+      expect(wrapper.text()).toContain('PayamBar');
+      expect(wrapper.text()).toContain('نسخه 1.2.3');
+    });
+  });
+
+  describe('ProfileModal.vue', () => {
+    it('renders modal tabs', () => {
+      const wrapper = mount(ProfileModal, {
+        props: {
+          isOpen: true,
+          appVersion: '1.0.0',
+        },
+      });
+
+      expect(wrapper.text()).toContain('پروفایل');
+      expect(wrapper.text()).toContain('اعلان‌ها');
+      expect(wrapper.text()).toContain('حساب');
+      expect(wrapper.text()).toContain('درباره');
+
+      const saveBtn = wrapper.find('.profile-modal-footer .btn-primary');
+      expect(saveBtn.exists()).toBe(true);
+      expect(saveBtn.text()).toContain('ذخیره تغییرات');
+      expect(saveBtn.attributes('form')).toBe('profile-form');
+    });
+  });
+
+  describe('NewChatModal.vue', () => {
+    it('renders new chat modal with search input', () => {
+      const wrapper = mount(NewChatModal, {
+        props: {
+          isOpen: true,
+          token: 'test-token',
+        },
+      });
+
+      expect(wrapper.text()).toContain('مکالمه جدید');
+      const searchInput = wrapper.find('input[type="search"]');
+      expect(searchInput.exists()).toBe(true);
+      expect(searchInput.attributes('placeholder')).toContain('نام کاربری');
     });
   });
 });

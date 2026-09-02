@@ -6,6 +6,8 @@ import MessagesContainer from './MessagesContainer.vue';
 import MessageContextMenu from './MessageContextMenu.vue';
 import MessageInputArea from './MessageInputArea.vue';
 
+const messageText = defineModel<string>('messageText', { default: '' });
+
 defineProps<{
   chatListOpen: boolean;
   conversation: Conversation | null;
@@ -22,7 +24,6 @@ defineProps<{
     message: Message | null;
   };
   pullToRefresh: PullToRefreshState;
-  messageText: string;
   recordingVoice: boolean;
   recordingElapsedSec: number;
   uploadingFile: boolean;
@@ -37,7 +38,6 @@ const emit = defineEmits<{
   (e: 'close-message-menu'): void;
   (e: 'copy-message', msg: Message): void;
   (e: 'delete-message', msg: Message): void;
-  (e: 'update:messageText', text: string): void;
   (e: 'send-message'): void;
   (e: 'select-file', file: File): void;
   (e: 'toggle-voice'): void;
@@ -113,12 +113,11 @@ defineExpose({
     <MessageInputArea
       ref="inputAreaRef"
       :show="Boolean(currentConversationId)"
-      :message-text="messageText"
+      v-model:message-text="messageText"
       :recording-voice="recordingVoice"
       :recording-elapsed-sec="recordingElapsedSec"
       :uploading-file="uploadingFile"
       :sending-voice="sendingVoice"
-      @update:message-text="emit('update:messageText', $event)"
       @send="emit('send-message')"
       @select-file="emit('select-file', $event)"
       @toggle-voice="emit('toggle-voice')"

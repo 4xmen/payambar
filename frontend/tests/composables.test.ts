@@ -4,6 +4,8 @@ import { useConversations } from '@/composables/useConversations';
 import { useMessages } from '@/composables/useMessages';
 import { useToast } from '@/composables/useToast';
 import { useE2EE } from '@/composables/useE2EE';
+import { useNetworkStatus } from '@/composables/useNetworkStatus';
+import { useAppWebSocket } from '@/composables/useAppWebSocket';
 
 describe('Composables', () => {
   beforeEach(() => {
@@ -140,6 +142,32 @@ describe('Composables', () => {
       resetE2EEState();
       expect(e2ee.ready).toBe(false);
       expect(e2ee.ownerUserId).toBeNull();
+    });
+  });
+
+  describe('useNetworkStatus', () => {
+    it('tracks online status and triggers callback', () => {
+      let onlineTriggered = false;
+      const { isOffline } = useNetworkStatus({
+        onOnline: () => {
+          onlineTriggered = true;
+        },
+      });
+
+      expect(typeof isOffline.value).toBe('boolean');
+      window.dispatchEvent(new Event('online'));
+      expect(onlineTriggered).toBe(true);
+      expect(isOffline.value).toBe(false);
+    });
+  });
+
+  describe('useAppWebSocket', () => {
+    it('exposes connection state and controls', () => {
+      const { wsConnected, serverOffline, wsReconnectAttempts, closeWebSocket } = useAppWebSocket();
+      expect(wsConnected.value).toBe(false);
+      expect(serverOffline.value).toBe(false);
+      expect(wsReconnectAttempts.value).toBe(0);
+      expect(typeof closeWebSocket).toBe('function');
     });
   });
 });
