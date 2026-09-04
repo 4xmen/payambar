@@ -6,6 +6,7 @@ import { useToast } from '@/composables/useToast';
 import { useE2EE } from '@/composables/useE2EE';
 import { useNetworkStatus } from '@/composables/useNetworkStatus';
 import { useAppWebSocket } from '@/composables/useAppWebSocket';
+import { useTheme } from '@/composables/useTheme';
 
 describe('Composables', () => {
   beforeEach(() => {
@@ -210,6 +211,33 @@ describe('Composables', () => {
       expect(serverOffline.value).toBe(false);
       expect(wsReconnectAttempts.value).toBe(0);
       expect(typeof closeWebSocket).toBe('function');
+    });
+  });
+
+  describe('useTheme', () => {
+    it('initializes and switches theme preferences', () => {
+      const { preference, isDark, setTheme, toggleTheme } = useTheme();
+
+      setTheme('dark');
+      expect(preference.value).toBe('dark');
+      expect(isDark.value).toBe(true);
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+      expect(localStorage.getItem('payambar_theme_pref')).toBe('dark');
+
+      setTheme('light');
+      expect(preference.value).toBe('light');
+      expect(isDark.value).toBe(false);
+      expect(document.documentElement.getAttribute('data-theme')).toBeNull();
+      expect(localStorage.getItem('payambar_theme_pref')).toBe('light');
+
+      toggleTheme();
+      expect(preference.value).toBe('dark');
+      expect(isDark.value).toBe(true);
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+
+      toggleTheme();
+      expect(preference.value).toBe('light');
+      expect(isDark.value).toBe(false);
     });
   });
 });

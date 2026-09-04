@@ -5,6 +5,8 @@ import ConversationItem from './ConversationItem.vue';
 import ConversationContextMenu from './ConversationContextMenu.vue';
 import NewChatModal from './NewChatModal.vue';
 
+const searchQuery = defineModel<string>('searchQuery', { default: '' });
+
 defineProps<{
   chatListOpen: boolean;
   avatarUrl: string | null;
@@ -48,6 +50,38 @@ const emit = defineEmits<{
       @open-profile="emit('open-profile')"
     />
 
+    <!-- Conversation Search Bar -->
+    <div class="chat-search-container">
+      <div class="chat-search-wrapper">
+        <svg
+          class="chat-search-icon"
+          viewBox="0 0 24 24"
+        >
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input
+          v-model="searchQuery"
+          type="text"
+          class="chat-search-input"
+          placeholder="جستجوی گفتگوها..."
+          aria-label="جستجوی گفتگوها"
+        />
+        <button
+          v-if="searchQuery"
+          type="button"
+          class="chat-search-clear"
+          @click="searchQuery = ''"
+          aria-label="پاک کردن جستجو"
+        >
+          <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
     <!-- Conversations List -->
     <div class="conversations-list">
       <div v-if="loadingConversations && filteredConversations.length === 0" class="conversation-skeleton-list">
@@ -64,7 +98,7 @@ const emit = defineEmits<{
       </div>
 
       <div v-else-if="filteredConversations.length === 0" class="empty-state">
-        هیچ مکالمه‌ای نیست
+        {{ searchQuery ? 'گفتگویی با این مشخصات یافت نشد' : 'هیچ مکالمه‌ای نیست' }}
       </div>
 
       <ConversationItem

@@ -11,7 +11,11 @@ import MessageItem from '@/components/chat/MessageItem.vue';
 import ActiveCallBar from '@/components/call/ActiveCallBar.vue';
 import ProfileModal from '@/components/profile/ProfileModal.vue';
 import AboutTab from '@/components/profile/tabs/AboutTab.vue';
+import AppearanceTab from '@/components/profile/tabs/AppearanceTab.vue';
 import NewChatModal from '@/components/chat/NewChatModal.vue';
+import MessageInputArea from '@/components/chat/MessageInputArea.vue';
+import ChatListPanel from '@/components/chat/ChatListPanel.vue';
+import MessagesContainer from '@/components/chat/MessagesContainer.vue';
 import type { Conversation, Message } from '@/types';
 
 describe('Component Unit Tests', () => {
@@ -94,7 +98,7 @@ describe('Component Unit Tests', () => {
   });
 
   describe('UserSearchItem.vue', () => {
-    it('renders search result user and emits select', async () => {
+    it('renders search result user and emits select on click and keyboard', async () => {
       const rawUser = {
         id: 5,
         username: 'bob',
@@ -112,9 +116,13 @@ describe('Component Unit Tests', () => {
       expect(wrapper.text()).toContain('Bob Ross');
       expect(wrapper.text()).toContain('@bob');
       expect(wrapper.text()).toContain('آنلاین');
+      expect(wrapper.find('.chevron svg').exists()).toBe(true);
 
       await wrapper.trigger('click');
       expect(wrapper.emitted('select')).toBeTruthy();
+
+      await wrapper.trigger('keydown.enter');
+      expect(wrapper.emitted('select')?.length).toBe(2);
     });
   });
 
@@ -235,7 +243,7 @@ describe('Component Unit Tests', () => {
       expect(wrapper2.find('.message-status').exists()).toBe(true);
     });
 
-    it('renders image media message', () => {
+    it('renders image media message and emits preview-image on click', async () => {
       const msg: Message = {
         id: 2,
         sender_id: 2,
@@ -259,6 +267,10 @@ describe('Component Unit Tests', () => {
       expect(wrapper.classes()).toContain('received');
       expect(wrapper.find('img.message-image').exists()).toBe(true);
       expect(wrapper.find('.message-status').exists()).toBe(false);
+
+      await wrapper.find('.message-image-btn').trigger('click');
+      expect(wrapper.emitted('preview-image')).toBeTruthy();
+      expect(wrapper.emitted('preview-image')?.[0]).toEqual(['/uploads/pic.png']);
     });
   });
 
@@ -309,6 +321,7 @@ describe('Component Unit Tests', () => {
       });
 
       expect(wrapper.text()).toContain('پروفایل');
+      expect(wrapper.text()).toContain('ظاهر');
       expect(wrapper.text()).toContain('اعلان‌ها');
       expect(wrapper.text()).toContain('حساب');
       expect(wrapper.text()).toContain('درباره');
@@ -317,6 +330,118 @@ describe('Component Unit Tests', () => {
       expect(saveBtn.exists()).toBe(true);
       expect(saveBtn.text()).toContain('ذخیره تغییرات');
       expect(saveBtn.attributes('form')).toBe('profile-form');
+    });
+  });
+
+  describe('AppearanceTab.vue', () => {
+    it('renders theme options and allows selecting theme', async () => {
+      const wrapper = mount(AppearanceTab);
+      expect(wrapper.text()).toContain('انتخاب تم ظاهری');
+      expect(wrapper.text()).toContain('تم روشن');
+      expect(wrapper.text()).toContain('تم تاریک');
+      expect(wrapper.text()).toContain('خودکار');
+
+      const darkOption = wrapper.findAll('.theme-option-card')[1];
+      await darkOption.trigger('click');
+      expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    });
+  });
+
+  describe('MessageInputArea.vue', () => {
+    it('handles clipboard paste of image files', async () => {
+      const wrapper = mount(MessageInputArea, {
+        props: {
+          show: true,
+          recordingVoice: false,
+          recordingElapsedSec: 0,
+          uploadingFile: false,
+          sendingVoice: false,
+          messageText: '',
+        },
+      });
+
+      const textarea = wrapper.find('textarea');
+      const fakeFile = new File(['dummy'], 'screenshot.png', { type: 'image/png' });
+
+      // Trigger paste with a file
+      await textarea.trigger('paste', {
+        clipboardData: {
+          files: [fakeFile],
+          items: [],
+        },
+      });
+
+      expect(wrapper.emitted('select-file')).toBeTruthy();
+      expect(wrapper.emitted('select-file')?.[0][0]).toBe(fakeFile);
+    });
+    it('emits cancel-voice event when cancel button is clicked during recording', async () => {
+      const wrapper = mount(MessageInputArea, {
+        props: {
+          show: true,
+          recordingVoice: true,
+          recordingElapsedSec: 5,
+          uploadingFile: false,
+          sendingVoice: false,
+          messageText: '',
+        },
+      });
+
+      expect(wrapper.find('.recording-indicator-row').exists()).toBe(true);
+      const cancelBtn = wrapper.find('.btn-cancel-voice');
+      expect(cancelBtn.exists()).toBe(true);
+      await cancelBtn.trigger('click');
+      expect(wrapper.emitted('cancel-voice')).toBeTruthy();
+    });
+  });
+
+  describe('MessagesContainer.vue', () => {
+    it('renders desktop empty state when no conversation is selected', () => {
+      const wrapper = mount(MessagesContainer, {
+        props: {
+          currentConversationId: null,
+          loadingMessages: false,
+          loadingOlderMessages: false,
+          hasMore: false,
+          messages: [],
+          myUserId: 1,
+          pullToRefresh: {
+            startY: 0,
+            currentY: 0,
+            pulling: false,
+            refreshing: false,
+            threshold: 70,
+            ready: false,
+          },
+        },
+      });
+
+      expect(wrapper.find('.desktop-empty-state').exists()).toBe(true);
+      expect(wrapper.text()).toContain('پیام‌رسان پیامبر');
+    });
+  });
+
+  describe('ChatListPanel.vue', () => {
+    it('renders conversation search bar and updates searchQuery', () => {
+      const wrapper = mount(ChatListPanel, {
+        props: {
+          chatListOpen: true,
+          avatarUrl: null,
+          username: 'user1',
+          displayName: 'User 1',
+          statusText: 'آنلاین',
+          loadingConversations: false,
+          filteredConversations: [],
+          currentConversationId: null,
+          conversationMenu: { show: false, x: 0, y: 0, conversation: null },
+          showNewChatModal: false,
+          token: 'test',
+          searchQuery: '',
+        },
+      });
+
+      const searchInput = wrapper.find('.chat-search-input');
+      expect(searchInput.exists()).toBe(true);
+      expect(searchInput.attributes('placeholder')).toContain('جستجوی گفتگوها');
     });
   });
 

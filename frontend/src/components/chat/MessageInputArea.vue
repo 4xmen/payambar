@@ -16,10 +16,12 @@ const emit = defineEmits<{
   (e: 'send'): void;
   (e: 'select-file', file: File): void;
   (e: 'toggle-voice'): void;
+  (e: 'cancel-voice'): void;
 }>();
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
+const isDraggingOver = ref<boolean>(false);
 
 function resizeTextarea() {
   const input = textareaRef.value;
@@ -44,6 +46,54 @@ function onFileChange(event: Event) {
   }
 }
 
+function onPaste(event: ClipboardEvent) {
+  const files = event.clipboardData?.files;
+  if (files && files.length > 0) {
+    const file = files[0];
+    if (file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/') || file.size > 0) {
+      event.preventDefault();
+      emit('select-file', file);
+      return;
+    }
+  }
+
+  const items = event.clipboardData?.items;
+  if (items) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf('image') !== -1) {
+        const file = item.getAsFile();
+        if (file) {
+          event.preventDefault();
+          emit('select-file', file);
+          return;
+        }
+      }
+    }
+  }
+}
+
+function onDragOver(event: DragEvent) {
+  event.preventDefault();
+  if (event.dataTransfer?.types?.includes('Files')) {
+    isDraggingOver.value = true;
+  }
+}
+
+function onDragLeave(event: DragEvent) {
+  event.preventDefault();
+  isDraggingOver.value = false;
+}
+
+function onDrop(event: DragEvent) {
+  event.preventDefault();
+  isDraggingOver.value = false;
+  const file = event.dataTransfer?.files?.[0];
+  if (file) {
+    emit('select-file', file);
+  }
+}
+
 function focus() {
   textareaRef.value?.focus();
 }
@@ -55,7 +105,14 @@ defineExpose({
 </script>
 
 <template>
-  <div class="message-input-area" v-show="show">
+  <div
+    class="message-input-area"
+    :class="{ 'is-dragging': isDraggingOver }"
+    v-show="show"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
     <div class="input-container">
       <input
         type="file"
@@ -97,6 +154,7 @@ defineExpose({
         v-model="messageText"
         @input="resizeTextarea"
         @keydown="onKeydown"
+        @paste="onPaste"
         placeholder="پیام..."
       ></textarea>
 
@@ -104,6 +162,7 @@ defineExpose({
         type="button"
         style="direction: ltr;"
         class="icon-btn solid send-btn"
+        :disabled="!messageText?.trim()"
         @click="emit('send')"
         aria-label="ارسال"
       >
@@ -114,8 +173,24 @@ defineExpose({
       </button>
     </div>
 
-    <div v-if="recordingVoice" class="recording-indicator">
-      در حال ضبط صدا: {{ formatRecordingDuration(recordingElapsedSec) }}
+    <div v-if="recordingVoice" class="recording-indicator-row">
+      <div class="recording-status">
+        <span class="recording-pulse-dot"></span>
+        <span>در حال ضبط صدا: {{ formatRecordingDuration(recordingElapsedSec) }}</span>
+      </div>
+      <button
+        type="button"
+        class="btn-cancel-voice"
+        @click="emit('cancel-voice')"
+        aria-label="لغو ضبط صدا"
+        title="لغو ضبط صدا"
+      >
+        <svg class="icon-svg" viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" fill="none" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+        <span>لغو</span>
+      </button>
     </div>
     <div v-if="sendingVoice" class="upload-progress">در حال ارسال پیام صوتی...</div>
     <div v-if="uploadingFile" class="upload-progress">در حال آپلود...</div>

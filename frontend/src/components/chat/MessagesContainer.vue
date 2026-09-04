@@ -21,6 +21,7 @@ const emit = defineEmits<{
   (e: 'pull-start', event: TouchEvent | MouseEvent): void;
   (e: 'pull-move', event: TouchEvent | MouseEvent): void;
   (e: 'pull-end'): void;
+  (e: 'preview-image', url: string): void;
 }>();
 
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -54,8 +55,10 @@ defineExpose({
     @touchmove="emit('pull-move', $event)"
     @touchend="emit('pull-end')"
   >
-    <div v-if="!currentConversationId" class="empty-state">
-      یک مکالمه را انتخاب کنید
+    <div v-if="!currentConversationId" class="desktop-empty-state">
+      <div class="desktop-empty-badge">💬</div>
+      <h3 class="desktop-empty-title">پیام‌رسان پیامبر</h3>
+      <p class="desktop-empty-desc">برای شروع چت، یک مکالمه را از فهرست انتخاب کنید یا با دکمه + مکالمه جدید بسازید.</p>
     </div>
     <div v-else-if="loadingMessages" class="empty-state">
       در حال بارگذاری...
@@ -82,6 +85,7 @@ defineExpose({
         :all-messages="messages"
         :my-user-id="myUserId"
         @open-menu="(ev, m) => emit('open-message-menu', ev, m)"
+        @preview-image="(url) => emit('preview-image', url)"
       />
     </div>
   </div>

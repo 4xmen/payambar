@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import ProfileTab from './tabs/ProfileTab.vue';
+import AppearanceTab from './tabs/AppearanceTab.vue';
 import NotificationsTab from './tabs/NotificationsTab.vue';
 import AccountTab from './tabs/AccountTab.vue';
 import AboutTab from './tabs/AboutTab.vue';
@@ -17,7 +18,7 @@ const emit = defineEmits<{
 
 const dialogRef = ref<HTMLDialogElement | null>(null);
 const profileTabRef = ref<InstanceType<typeof ProfileTab> | null>(null);
-const activeTab = ref<'profile' | 'notifications' | 'account' | 'about'>('profile');
+const activeTab = ref<'profile' | 'appearance' | 'notifications' | 'account' | 'about'>('profile');
 
 watch(
   () => props.isOpen,
@@ -90,6 +91,15 @@ function handleBackdropClick(e: MouseEvent) {
         <button
           type="button"
           role="tab"
+          :aria-selected="activeTab === 'appearance'"
+          :class="{ active: activeTab === 'appearance' }"
+          @click="activeTab = 'appearance'"
+        >
+          ظاهر
+        </button>
+        <button
+          type="button"
+          role="tab"
           :aria-selected="activeTab === 'notifications'"
           :class="{ active: activeTab === 'notifications' }"
           @click="activeTab = 'notifications'"
@@ -121,6 +131,10 @@ function handleBackdropClick(e: MouseEvent) {
           v-if="activeTab === 'profile'"
           ref="profileTabRef"
           @close="closeModal"
+        />
+
+        <AppearanceTab
+          v-else-if="activeTab === 'appearance'"
         />
 
         <NotificationsTab

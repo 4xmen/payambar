@@ -18,6 +18,7 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'open-menu', event: MouseEvent, msg: Message): void;
+  (e: 'preview-image', url: string): void;
 }>();
 </script>
 
@@ -31,13 +32,19 @@ const emit = defineEmits<{
         <!-- Image -->
         <template v-if="isImageMessage(message)">
           <div class="media-message image-message">
-            <a :href="message.file_url" target="_blank" class="message-image-link">
+            <button
+              type="button"
+              class="message-image-btn"
+              @click="message.file_url && emit('preview-image', message.file_url)"
+              aria-label="مشاهده تصویر"
+            >
               <img
                 :src="message.file_url"
                 class="message-image"
                 :alt="message.file_name || 'image'"
+                loading="lazy"
               />
-            </a>
+            </button>
           </div>
         </template>
 

@@ -67,6 +67,7 @@ const {
   currentConversationId,
   currentConversation,
   conversations,
+  searchQuery,
   filteredConversations,
   loadingConversations,
   showNewChatModal,
@@ -596,6 +597,7 @@ onBeforeUnmount(() => {
           :conversation-menu="conversationMenu"
           :show-new-chat-modal="showNewChatModal"
           :token="token"
+          v-model:search-query="searchQuery"
           @open-profile="openProfileModal"
           @select-conversation="onSelectConversation"
           @open-conversation-menu="(ev, c) => convs.openConversationMenu(ev, c)"
@@ -634,6 +636,7 @@ onBeforeUnmount(() => {
           @send-message="onSendMessage"
           @select-file="onSelectFile"
           @toggle-voice="onToggleVoice"
+          @cancel-voice="msgs.cleanupVoiceRecorder"
           @pull-start="onPullStart"
           @pull-move="onPullMove"
           @pull-end="onPullEnd"
