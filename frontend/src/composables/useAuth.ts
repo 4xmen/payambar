@@ -22,6 +22,7 @@ const suppressBackupWarningOnce = ref<boolean>(false);
 
 const authTab = ref<'login' | 'register'>('login');
 const authError = ref<string>('');
+const isAuthLoading = ref<boolean>(false);
 const acceptRules = ref<boolean>(false);
 const showRulesModal = ref<boolean>(false);
 
@@ -81,6 +82,7 @@ export function useAuth() {
 
   async function handleLogin(): Promise<boolean> {
     authError.value = '';
+    isAuthLoading.value = true;
     try {
       const data = await login(API_URL, {
         username: loginForm.username,
@@ -93,6 +95,8 @@ export function useAuth() {
     } catch (err: any) {
       authError.value = err.message || 'Login failed';
       return false;
+    } finally {
+      isAuthLoading.value = false;
     }
   }
 
@@ -107,6 +111,7 @@ export function useAuth() {
       authError.value = validation.error;
       return false;
     }
+    isAuthLoading.value = true;
     try {
       const data = await register(API_URL, {
         username: registerForm.username,
@@ -119,6 +124,8 @@ export function useAuth() {
     } catch (err: any) {
       authError.value = err.message || 'Register failed';
       return false;
+    } finally {
+      isAuthLoading.value = false;
     }
   }
 
@@ -205,6 +212,7 @@ export function useAuth() {
     suppressBackupWarningOnce,
     authTab,
     authError,
+    isAuthLoading,
     acceptRules,
     showRulesModal,
     loginForm,

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useAuth } from '../../../composables/useAuth';
+import { useConfirm } from '../../../composables/useConfirm';
+import { useToast } from '../../../composables/useToast';
 
 const emit = defineEmits<{
   (e: 'close'): void;
@@ -8,12 +10,21 @@ const emit = defineEmits<{
 }>();
 
 const { username, deleteAccount } = useAuth();
+const { confirm } = useConfirm();
+const { showToast } = useToast();
 
 const deleteAccountConfirm = ref<string>('');
 const deletingAccount = ref<boolean>(false);
 
-function onLogout() {
-  if (confirm('آیا از خروج اطمینان دارید؟')) {
+async function onLogout() {
+  const ok = await confirm({
+    title: 'خروج از حساب',
+    message: 'آیا از خروج از حساب کاربری اطمینان دارید؟',
+    confirmText: 'خروج',
+    cancelText: 'انصراف',
+    variant: 'danger',
+  });
+  if (ok) {
     emit('close');
     emit('logout');
   }
@@ -21,22 +32,29 @@ function onLogout() {
 
 async function onDeleteAccount() {
   if (!username.value || deleteAccountConfirm.value.trim() !== username.value) {
-    alert('نام کاربری وارد شده صحیح نیست');
+    showToast('نام کاربری وارد شده صحیح نیست', 'error');
     return;
   }
-  if (!confirm('این عملیات غیرقابل بازگشت است. آیا از حذف حساب اطمینان دارید؟')) {
+  const ok = await confirm({
+    title: 'حذف دائمی حساب کاربری',
+    message: 'این عملیات غیرقابل بازگشت است و تمامی پیام‌ها و اطلاعات شما حذف خواهند شد. آیا اطمینان دارید؟',
+    confirmText: 'حذف دائمی حساب',
+    cancelText: 'انصراف',
+    variant: 'danger',
+  });
+  if (!ok) {
     return;
   }
 
   deletingAccount.value = true;
   try {
     await deleteAccount(deleteAccountConfirm.value);
-    alert('حساب کاربری حذف شد');
+    showToast('حساب کاربری حذف شد', 'success');
     emit('close');
     emit('logout');
   } catch (err: any) {
     console.error('Error deleting account:', err);
-    alert(err.message || 'خطا در حذف حساب');
+    showToast(err.message || 'خطا در حذف حساب', 'error');
   } finally {
     deletingAccount.value = false;
   }

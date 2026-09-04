@@ -23,7 +23,7 @@ async function togglePushNotifications() {
       console.error('Push subscribe failed:', err);
       pushNotificationsEnabled.value = false;
       localStorage.removeItem('pushNotificationsEnabled');
-      alert('فعال‌سازی اعلان‌ها ناموفق بود');
+      showToast('فعال‌سازی اعلان‌ها ناموفق بود', 'error');
     }
   } else {
     try {

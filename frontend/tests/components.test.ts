@@ -16,6 +16,8 @@ import NewChatModal from '@/components/chat/NewChatModal.vue';
 import MessageInputArea from '@/components/chat/MessageInputArea.vue';
 import ChatListPanel from '@/components/chat/ChatListPanel.vue';
 import MessagesContainer from '@/components/chat/MessagesContainer.vue';
+import ConfirmModal from '@/components/ui/ConfirmModal.vue';
+import ToastNotification from '@/components/ui/ToastNotification.vue';
 import type { Conversation, Message } from '@/types';
 
 describe('Component Unit Tests', () => {
@@ -30,22 +32,63 @@ describe('Component Unit Tests', () => {
   });
 
   describe('LoginForm.vue', () => {
-    it('renders username and password inputs', () => {
+    it('renders username and password inputs with visible labels', () => {
       const wrapper = mount(LoginForm);
+      const labels = wrapper.findAll('label');
+      expect(labels.length).toBe(2);
+      expect(labels[0].text()).toBe('نام کاربری');
+      expect(labels[1].text()).toBe('رمز عبور');
+
       const inputs = wrapper.findAll('input');
       expect(inputs.length).toBe(2);
       expect(inputs[0].attributes('placeholder')).toBe('نام‌کاربری');
       expect(inputs[1].attributes('placeholder')).toBe('رمز‌عبور');
+      expect(inputs[1].attributes('type')).toBe('password');
+    });
+
+    it('toggles password visibility on eye button click', async () => {
+      const wrapper = mount(LoginForm);
+      expect(wrapper.find('#login-password').attributes('type')).toBe('password');
+
+      const toggleBtn = wrapper.find('.password-toggle-btn');
+      expect(toggleBtn.exists()).toBe(true);
+
+      await toggleBtn.trigger('click');
+      expect(wrapper.find('#login-password').attributes('type')).toBe('text');
+
+      await toggleBtn.trigger('click');
+      expect(wrapper.find('#login-password').attributes('type')).toBe('password');
     });
   });
 
   describe('RegisterForm.vue', () => {
-    it('renders username, password, confirm, rules checkbox', () => {
+    it('renders username, password, confirm, rules checkbox with visible labels', () => {
       const wrapper = mount(RegisterForm);
+      const labels = wrapper.findAll('label');
+      expect(labels.length).toBe(4);
+      expect(labels[0].text()).toBe('نام کاربری');
+      expect(labels[1].text()).toBe('رمز عبور');
+      expect(labels[2].text()).toBe('تکرار رمز عبور');
+
       const inputs = wrapper.findAll('input');
       expect(inputs.length).toBe(4);
       expect(inputs[0].attributes('placeholder')).toBe('نام‌کاربری');
       expect(inputs[3].attributes('type')).toBe('checkbox');
+    });
+
+    it('toggles password and confirm visibility', async () => {
+      const wrapper = mount(RegisterForm);
+      const toggleBtns = wrapper.findAll('.password-toggle-btn');
+      expect(toggleBtns.length).toBe(2);
+
+      expect(wrapper.find('#reg-password').attributes('type')).toBe('password');
+      expect(wrapper.find('#reg-confirm').attributes('type')).toBe('password');
+
+      await toggleBtns[0].trigger('click');
+      expect(wrapper.find('#reg-password').attributes('type')).toBe('text');
+
+      await toggleBtns[1].trigger('click');
+      expect(wrapper.find('#reg-confirm').attributes('type')).toBe('text');
     });
   });
 
@@ -458,6 +501,22 @@ describe('Component Unit Tests', () => {
       const searchInput = wrapper.find('input[type="search"]');
       expect(searchInput.exists()).toBe(true);
       expect(searchInput.attributes('placeholder')).toContain('نام کاربری');
+    });
+  });
+
+  describe('ToastNotification.vue', () => {
+    it('renders toast container element', () => {
+      const wrapper = mount(ToastNotification);
+      expect(wrapper.find('#toast').exists()).toBe(true);
+    });
+  });
+
+  describe('ConfirmModal.vue', () => {
+    it('renders closed native dialog by default', () => {
+      const wrapper = mount(ConfirmModal);
+      const dialog = wrapper.find('dialog#confirm-modal');
+      expect(dialog.exists()).toBe(true);
+      expect((dialog.element as HTMLDialogElement).open).toBe(false);
     });
   });
 });

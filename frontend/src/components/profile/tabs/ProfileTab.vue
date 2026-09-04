@@ -27,21 +27,21 @@ async function handleAvatarUpload(event: Event) {
   if (!file) return;
 
   if (!file.type.startsWith('image/')) {
-    alert('لطفا یک فایل تصویری انتخاب کنید');
+    showToast('لطفا یک فایل تصویری انتخاب کنید', 'error');
     return;
   }
   if (file.size > 2 * 1024 * 1024) {
-    alert('حجم آواتار باید کمتر از ۲ مگابایت باشد');
+    showToast('حجم آواتار باید کمتر از ۲ مگابایت باشد', 'error');
     return;
   }
 
   uploadingAvatar.value = true;
   try {
     await uploadAvatar(file);
-    showToast('آواتار بروزرسانی شد');
+    showToast('آواتار بروزرسانی شد', 'success');
   } catch (err) {
     console.error('Avatar upload error:', err);
-    alert('خطا در آپلود آواتار');
+    showToast('خطا در آپلود آواتار', 'error');
   } finally {
     uploadingAvatar.value = false;
     target.value = '';
@@ -53,11 +53,11 @@ async function onSaveProfile() {
   isSaving.value = true;
   try {
     await saveProfile(displayNameEdit.value);
-    showToast('پروفایل ذخیره شد');
+    showToast('پروفایل ذخیره شد', 'success');
     emit('close');
   } catch (err) {
     console.error('Error saving profile:', err);
-    alert('خطا در ذخیره پروفایل');
+    showToast('خطا در ذخیره پروفایل', 'error');
   } finally {
     isSaving.value = false;
   }

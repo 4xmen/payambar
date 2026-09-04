@@ -11,6 +11,7 @@ import { useMessages } from './composables/useMessages';
 import { useCall } from './composables/useCall';
 import { useE2EE } from './composables/useE2EE';
 import { useToast } from './composables/useToast';
+import { useConfirm } from './composables/useConfirm';
 import { useAppWebSocket } from './composables/useAppWebSocket';
 import { useNetworkStatus } from './composables/useNetworkStatus';
 
@@ -22,6 +23,7 @@ import ActiveCallBar from './components/call/ActiveCallBar.vue';
 import IncomingCallModal from './components/call/IncomingCallModal.vue';
 import OutgoingCallModal from './components/call/OutgoingCallModal.vue';
 import ToastNotification from './components/ui/ToastNotification.vue';
+import ConfirmModal from './components/ui/ConfirmModal.vue';
 
 // Composables
 const auth = useAuth();
@@ -30,6 +32,7 @@ const msgs = useMessages();
 const call = useCall();
 const e2ee = useE2EE();
 const toast = useToast();
+const { confirm: confirmModal } = useConfirm();
 
 const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null);
 
@@ -191,7 +194,7 @@ async function onSendMessage() {
   }
 
   if (e2ee.e2ee.enabled && !encryptedPayload && !e2ee.e2ee.noKeyWarnedRecipients[receiverId]) {
-    alert('ارسال امن ممکن نیست؛ کلید مخاطب در دسترس نیست. پیام به صورت غیر رمزنگاری‌شده ارسال می‌شود.');
+    toast.showToast('ارسال امن ممکن نیست؛ کلید مخاطب در دسترس نیست. پیام به صورت غیر رمزنگاری‌شده ارسال می‌شود.', 'warning', 4000);
     e2ee.e2ee.noKeyWarnedRecipients[receiverId] = true;
   }
 
@@ -371,23 +374,39 @@ async function onCopyMessage(msg: Message) {
 async function onDeleteMessage(msg: Message) {
   msgs.closeMessageContextMenu();
   if (!msg.id || !currentConversationId.value || !token.value) return;
-  if (!confirm('آیا از حذف این پیام اطمینان دارید؟')) return;
+  const ok = await confirmModal({
+    title: 'حذف پیام',
+    message: 'آیا از حذف این پیام اطمینان دارید؟',
+    confirmText: 'حذف پیام',
+    cancelText: 'انصراف',
+    variant: 'danger',
+  });
+  if (!ok) return;
   try {
     await msgs.deleteMessageById(token.value, currentConversationId.value, msg.id);
+    toast.showToast('پیام حذف شد', 'success');
   } catch {
-    alert('خطا در حذف پیام');
+    toast.showToast('خطا در حذف پیام', 'error');
   }
 }
 
 async function onDeleteConversation(conv: Conversation) {
   convs.closeConversationMenu();
   if (!conv || !conv.id || !token.value) return;
-  if (!confirm('آیا از حذف این مکالمه اطمینان دارید؟')) return;
+  const ok = await confirmModal({
+    title: 'حذف گفتگو',
+    message: 'آیا از حذف این مکالمه اطمینان دارید؟ تمامی پیام‌های این گفتگو پاک خواهند شد.',
+    confirmText: 'حذف گفتگو',
+    cancelText: 'انصراف',
+    variant: 'danger',
+  });
+  if (!ok) return;
   try {
     await convs.deleteSelectedConversation(token.value, conv);
     delete messages[conv.user_id];
+    toast.showToast('گفتگو حذف شد', 'success');
   } catch {
-    alert('خطا در حذف مکالمه');
+    toast.showToast('خطا در حذف مکالمه', 'error');
   }
 }
 
@@ -406,7 +425,7 @@ async function onSelectNewChatUser(user: SearchUser) {
     await onSelectConversation(created);
   } catch (err) {
     console.error('Error starting conversation:', err);
-    alert('خطا در ایجاد مکالمه');
+    toast.showToast('خطا در ایجاد مکالمه', 'error');
   }
 }
 
@@ -666,7 +685,8 @@ onBeforeUnmount(() => {
       />
     </div>
 
-    <!-- Global Toast -->
+    <!-- Global Toast & Confirmation Modal -->
     <ToastNotification />
+    <ConfirmModal />
   </div>
 </template>

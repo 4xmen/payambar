@@ -9,6 +9,7 @@ import {
   setupMediaSession,
 } from '../services/webrtc';
 import { playRingback, playRingtone, stopAllSounds } from '../services/sound';
+import { useToast } from './useToast';
 
 const iceServers = ref<RTCIceServer[]>([]);
 const localStream = ref<MediaStream | null>(null);
@@ -213,7 +214,7 @@ export function useCall() {
       });
     } catch (err) {
       console.error('Failed to start call:', err);
-      alert('خطا در دسترسی به میکروفون');
+      useToast().showToast('خطا در دسترسی به میکروفون', 'error');
       endCall({ isInitiator: false, sendWsMessage, onSaveCallLog });
     }
   }
@@ -287,7 +288,7 @@ export function useCall() {
       startCallTimer();
     } catch (err) {
       console.error('Failed to accept call:', err);
-      alert('خطا در دسترسی به میکروفون');
+      useToast().showToast('خطا در دسترسی به میکروفون', 'error');
       rejectCall(sendWsMessage);
     }
   }

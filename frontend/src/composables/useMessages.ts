@@ -1,6 +1,7 @@
 import { reactive, ref } from 'vue';
 import type { Message, PullToRefreshState } from '../types';
 import { API_URL, authHeaders, handleUnauthorized } from '../services/api';
+import { useToast } from './useToast';
 import {
   buildOfflineFileMessage,
   buildOptimisticTextMessage,
@@ -196,7 +197,7 @@ export function useMessages() {
       return null;
     } catch (err) {
       console.error('File upload error:', err);
-      alert('خطا در آپلود فایل');
+      useToast().showToast('خطا در آپلود فایل', 'error');
       return null;
     } finally {
       uploadingFile.value = false;
@@ -255,7 +256,7 @@ export function useMessages() {
       return true;
     } catch (err) {
       console.error('Voice recording error:', err);
-      alert('دسترسی میکروفون لازم است');
+      useToast().showToast('دسترسی میکروفون لازم است', 'error');
       cleanupVoiceRecorder();
       return false;
     }

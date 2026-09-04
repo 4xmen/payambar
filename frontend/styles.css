@@ -573,6 +573,20 @@ textarea:focus-visible {
     gap: 1rem;
 }
 
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    text-align: right;
+}
+
+.form-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--ink);
+    user-select: none;
+}
+
 .auth-form input {
     width: 100%;
     padding: 0.75rem 1rem;
@@ -594,6 +608,38 @@ textarea:focus-visible {
     color: var(--muted-light);
 }
 
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.password-input-wrapper input {
+    padding-left: 2.5rem;
+}
+
+.password-toggle-btn {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    padding: 0.25rem;
+    cursor: pointer;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-xs);
+    transition: color 0.15s ease;
+}
+
+.password-toggle-btn:hover {
+    color: var(--ink);
+}
+
 .auth-form button[type="submit"] {
     margin-top: 0.5rem;
     padding: 0.75rem 1rem;
@@ -606,16 +652,42 @@ textarea:focus-visible {
     cursor: pointer;
     transition: transform 0.1s ease, box-shadow 0.15s ease, background 0.15s ease;
     box-shadow: var(--shadow-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
 }
 
-.auth-form button[type="submit"]:hover {
+.auth-form button[type="submit"]:hover:not(:disabled) {
     background: var(--btn-primary-hover);
     transform: translateY(-1px);
     box-shadow: var(--shadow-md);
 }
 
-.auth-form button[type="submit"]:active {
+.auth-form button[type="submit"]:active:not(:disabled) {
     transform: translateY(0);
+}
+
+.auth-form button[type="submit"]:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-spinner {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .rules-checkbox {
@@ -2732,7 +2804,7 @@ dialog.modal[open]::backdrop {
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%) translateY(100%);
-    background: rgba(24, 24, 27, 0.92);
+    background: rgba(24, 24, 27, 0.94);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     color: #ffffff;
@@ -2745,11 +2817,147 @@ dialog.modal[open]::backdrop {
     pointer-events: none;
     z-index: 9999;
     box-shadow: var(--shadow-xl);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: min(90vw, 420px);
+    direction: rtl;
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 #toast.show {
     transform: translateX(-50%) translateY(0);
     opacity: 1;
+}
+
+#toast.error {
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
+#toast.success {
+    border-color: rgba(34, 197, 94, 0.4);
+}
+
+#toast.warning {
+    border-color: rgba(245, 158, 11, 0.4);
+}
+
+.toast-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    background: #60a5fa;
+    flex-shrink: 0;
+}
+
+.toast-dot.error {
+    background: #ef4444;
+}
+
+.toast-dot.success {
+    background: #22c55e;
+}
+
+.toast-dot.warning {
+    background: #f59e0b;
+}
+
+/* ==========================================================================
+   CONFIRMATION MODAL
+   ========================================================================== */
+dialog.confirm-modal-dialog[open] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    z-index: 10000;
+}
+
+dialog.confirm-modal-dialog[open]::backdrop {
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+}
+
+.confirm-modal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-2xl);
+    width: 100%;
+    max-width: 400px;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    direction: rtl;
+    text-align: right;
+}
+
+.confirm-modal-title {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--ink);
+}
+
+.confirm-modal-message {
+    margin: 0;
+    font-size: 0.9375rem;
+    color: var(--muted);
+    line-height: 1.6;
+}
+
+.confirm-modal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.btn-cancel {
+    background: var(--surface-muted);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    padding: 0.55rem 1.1rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-cancel:hover {
+    background: var(--border-subtle);
+}
+
+.btn-primary-confirm {
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-text);
+    border: 1px solid var(--btn-primary-border);
+    padding: 0.55rem 1.1rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.btn-danger-confirm {
+    background: var(--danger);
+    color: #ffffff;
+    border: 1px solid transparent;
+    padding: 0.55rem 1.1rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+.btn-danger-confirm:hover {
+    opacity: 0.9;
 }
 
 .mobile-only {
@@ -3070,6 +3278,12 @@ dialog.modal[open]::backdrop {
     dialog.modal[open] {
         align-items: flex-end;
         padding: 0;
+    }
+
+    dialog.confirm-modal-dialog[open] {
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
     }
 
     .modal-card,

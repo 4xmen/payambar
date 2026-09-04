@@ -7,6 +7,7 @@ import { useE2EE } from '@/composables/useE2EE';
 import { useNetworkStatus } from '@/composables/useNetworkStatus';
 import { useAppWebSocket } from '@/composables/useAppWebSocket';
 import { useTheme } from '@/composables/useTheme';
+import { useConfirm } from '@/composables/useConfirm';
 
 describe('Composables', () => {
   beforeEach(() => {
@@ -238,6 +239,36 @@ describe('Composables', () => {
       toggleTheme();
       expect(preference.value).toBe('light');
       expect(isDark.value).toBe(false);
+    });
+  });
+
+  describe('useConfirm', () => {
+    it('opens confirm modal and resolves on handleConfirm and handleCancel', async () => {
+      const { state, confirm, handleConfirm, handleCancel } = useConfirm();
+
+      expect(state.value.isOpen).toBe(false);
+
+      const promise = confirm({
+        title: 'تأیید حذف',
+        message: 'آیا مطمئن هستید؟',
+        variant: 'danger',
+      });
+
+      expect(state.value.isOpen).toBe(true);
+      expect(state.value.title).toBe('تأیید حذف');
+      expect(state.value.variant).toBe('danger');
+
+      handleConfirm();
+      const result = await promise;
+      expect(result).toBe(true);
+      expect(state.value.isOpen).toBe(false);
+
+      const cancelPromise = confirm('تست انصراف');
+      expect(state.value.isOpen).toBe(true);
+      handleCancel();
+      const cancelResult = await cancelPromise;
+      expect(cancelResult).toBe(false);
+      expect(state.value.isOpen).toBe(false);
     });
   });
 });
