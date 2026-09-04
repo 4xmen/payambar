@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/4xmen/payambar/internal/auth"
+	"github.com/disintegration/imaging"
 	"github.com/gin-gonic/gin"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -170,6 +175,8 @@ func setupTestRouter() *gin.Engine {
 		protected.DELETE("/conversations/:id", msgHandler.DeleteConversation)
 		protected.PUT("/messages/:id/delivered", msgHandler.MarkAsDelivered)
 		protected.PUT("/messages/:id/read", msgHandler.MarkAsRead)
+		protected.POST("/upload", msgHandler.UploadFile)
+		protected.POST("/profile/avatar", msgHandler.UploadAvatar)
 		protected.DELETE("/profile", msgHandler.DeleteAccount)
 		protected.GET("/webrtc/config", msgHandler.GetWebRTCConfig)
 		protected.POST("/push/subscribe", msgHandler.SubscribePush)
@@ -1152,3 +1159,181 @@ func TestGetVAPIDKey(t *testing.T) {
 		}
 	})
 }
+
+func createTestJPEGBytes(width, height int) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.Set(x, y, color.RGBA{R: 50, G: 100, B: 150, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	_ = jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90})
+	return buf.Bytes()
+}
+
+func TestUploadFile(t *testing.T) {
+	clearTestData()
+
+	user1ID, _ := testAuthSvc.Register("uploaduser1", "password123")
+	user2ID, _ := testAuthSvc.Register("uploaduser2", "password123")
+	token1, _ := testAuthSvc.GenerateToken(user1ID, "uploaduser1")
+
+	t.Run("upload large image compresses and resizes", func(t *testing.T) {
+		jpegData := createTestJPEGBytes(2400, 1600)
+
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		_ = writer.WriteField("receiver_id", strconv.Itoa(user2ID))
+		part, _ := writer.CreateFormFile("file", "photo.jpg")
+		_, _ = part.Write(jpegData)
+		_ = writer.Close()
+
+		req := httptest.NewRequest("POST", "/api/upload", &body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+token1)
+		w := httptest.NewRecorder()
+
+		testRouter.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("UploadFile status = %d, want 200, body=%s", w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		fileURL, ok := resp["file_url"].(string)
+		if !ok || fileURL == "" {
+			t.Fatalf("expected file_url in response")
+		}
+
+		// Find saved file in testUploadDir
+		baseName := filepath.Base(fileURL)
+		savedPath := filepath.Join(testUploadDir, baseName)
+		savedImg, err := imaging.Open(savedPath)
+		if err != nil {
+			t.Fatalf("failed to open saved compressed image: %v", err)
+		}
+
+		bounds := savedImg.Bounds()
+		if bounds.Dx() > 1920 || bounds.Dy() > 1920 {
+			t.Errorf("expected resized image max dimension <= 1920, got %dx%d", bounds.Dx(), bounds.Dy())
+		}
+	})
+
+	t.Run("upload non-image file preserved", func(t *testing.T) {
+		textContent := []byte("Hello World plain text file")
+
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		_ = writer.WriteField("receiver_id", strconv.Itoa(user2ID))
+		part, _ := writer.CreateFormFile("file", "notes.txt")
+		_, _ = part.Write(textContent)
+		_ = writer.Close()
+
+		req := httptest.NewRequest("POST", "/api/upload", &body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+token1)
+		w := httptest.NewRecorder()
+
+		testRouter.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("UploadFile status = %d, want 200, body=%s", w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		fileURL := resp["file_url"].(string)
+		baseName := filepath.Base(fileURL)
+		savedPath := filepath.Join(testUploadDir, baseName)
+
+		savedBytes, err := os.ReadFile(savedPath)
+		if err != nil {
+			t.Fatalf("failed to read saved text file: %v", err)
+		}
+		if !bytes.Equal(savedBytes, textContent) {
+			t.Errorf("saved text file content mismatch: got %q, want %q", string(savedBytes), string(textContent))
+		}
+	})
+}
+
+func TestUploadAvatar(t *testing.T) {
+	clearTestData()
+
+	userID, _ := testAuthSvc.Register("avataruser", "password123")
+	token, _ := testAuthSvc.GenerateToken(userID, "avataruser")
+
+	t.Run("upload avatar resizes to 256x256 jpeg", func(t *testing.T) {
+		rawImage := createTestJPEGBytes(800, 500)
+
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		part, _ := writer.CreateFormFile("avatar", "profile.jpg")
+		_, _ = part.Write(rawImage)
+		_ = writer.Close()
+
+		req := httptest.NewRequest("POST", "/api/profile/avatar", &body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+
+		testRouter.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("UploadAvatar status = %d, want 200, body=%s", w.Code, w.Body.String())
+		}
+
+		var resp map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+
+		avatarURL, ok := resp["avatar_url"].(string)
+		if !ok || avatarURL == "" {
+			t.Fatalf("expected avatar_url in response")
+		}
+
+		baseName := filepath.Base(avatarURL)
+		savedPath := filepath.Join(testUploadDir, baseName)
+		savedImg, err := imaging.Open(savedPath)
+		if err != nil {
+			t.Fatalf("failed to open saved avatar: %v", err)
+		}
+
+		bounds := savedImg.Bounds()
+		if bounds.Dx() != 256 || bounds.Dy() != 256 {
+			t.Errorf("expected avatar dimensions 256x256, got %dx%d", bounds.Dx(), bounds.Dy())
+		}
+
+		// Verify database user record has the avatar_url
+		var dbAvatar string
+		testDB.QueryRow("SELECT avatar_url FROM users WHERE id = ?", userID).Scan(&dbAvatar)
+		if dbAvatar != avatarURL {
+			t.Errorf("database avatar_url = %s, want %s", dbAvatar, avatarURL)
+		}
+	})
+
+	t.Run("upload avatar non-image rejected", func(t *testing.T) {
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		part, _ := writer.CreateFormFile("avatar", "notes.txt")
+		_, _ = part.Write([]byte("not an image"))
+		_ = writer.Close()
+
+		req := httptest.NewRequest("POST", "/api/profile/avatar", &body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+
+		testRouter.ServeHTTP(w, req)
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("UploadAvatar non-image status = %d, want 400", w.Code)
+		}
+	})
+}
+

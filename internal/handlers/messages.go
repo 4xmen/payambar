@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/4xmen/payambar/internal/imgutil"
 	"github.com/4xmen/payambar/internal/models"
 	"github.com/gin-gonic/gin"
 )
@@ -1138,22 +1140,46 @@ func (h *MessageHandler) UploadFile(c *gin.Context) {
 
 	messageID, _ := result.LastInsertId()
 
-	// Generate unique filename with path traversal protection
 	safeFilename := filepath.Base(header.Filename)
+	contentType := header.Header.Get("Content-Type")
+	fileSize := header.Size
+
+	var compressedData []byte
+	if imgutil.IsImage(contentType, safeFilename) && !imgutil.IsAnimatedGIF(contentType, safeFilename) {
+		if data, newFilename, newContentType, err := imgutil.CompressChatImage(file, safeFilename, contentType); err == nil {
+			// Use compressed version if smaller or if dimensions/format were optimized
+			if int64(len(data)) < fileSize || newFilename != safeFilename {
+				compressedData = data
+				safeFilename = newFilename
+				contentType = newContentType
+				fileSize = int64(len(data))
+			}
+		}
+	}
+
+	// Generate unique filename with path traversal protection
 	filename := strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + safeFilename
 	uploadPath := filepath.Join(h.uploadDir, filename)
 
-	// Save file
-	if err := c.SaveUploadedFile(header, uploadPath); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to save file")})
-		return
+	if len(compressedData) > 0 {
+		if err := os.WriteFile(uploadPath, compressedData, 0644); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to save file")})
+			return
+		}
+	} else {
+		// Reset file read pointer before saving original
+		_, _ = file.Seek(0, io.SeekStart)
+		if err := c.SaveUploadedFile(header, uploadPath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to save file")})
+			return
+		}
 	}
 
 	// Save file record
 	_, err = h.db.ExecContext(ctx, `
 		INSERT INTO files (message_id, file_name, file_path, file_size, content_type, created_at)
 		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, messageID, safeFilename, uploadPath, header.Size, header.Header.Get("Content-Type"))
+	`, messageID, safeFilename, uploadPath, fileSize, contentType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to save file record")})
 		return
@@ -1167,20 +1193,20 @@ func (h *MessageHandler) UploadFile(c *gin.Context) {
 			int(messageID),
 			userID.(int),
 			receiverID,
-			"📎 "+header.Filename,
+			"📎 "+safeFilename,
 			"sent",
-			header.Filename,
+			safeFilename,
 			fileURL,
-			header.Header.Get("Content-Type"),
+			contentType,
 		)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message_id":        messageID,
-		"file_name":         header.Filename,
-		"file_size":         header.Size,
+		"file_name":         safeFilename,
+		"file_size":         fileSize,
 		"file_url":          fileURL,
-		"file_content_type": header.Header.Get("Content-Type"),
+		"file_content_type": contentType,
 	})
 }
 
@@ -1229,31 +1255,31 @@ func (h *MessageHandler) UploadAvatar(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// Validate content type
+	// Validate content type or filename
 	contentType := header.Header.Get("Content-Type")
-	if !strings.HasPrefix(contentType, "image/") {
+	if !imgutil.IsImage(contentType, header.Filename) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": __("file must be an image")})
 		return
 	}
 
-	// Limit file size to 500KB
-	if header.Size > 500*1024 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": __("avatar must be smaller than 500KB")})
+	// Limit file size before compression
+	if header.Size > h.maxUploadSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": __("file too large")})
 		return
 	}
 
-	// Generate unique filename with path traversal protection
-	safeFilename := filepath.Base(header.Filename)
-	ext := ".jpg"
-	if strings.Contains(safeFilename, ".") {
-		parts := strings.Split(safeFilename, ".")
-		ext = "." + parts[len(parts)-1]
+	compressedAvatar, err := imgutil.CompressAvatar(file)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": __("file must be an image")})
+		return
 	}
-	filename := "avatar_" + strconv.Itoa(userID.(int)) + "_" + strconv.FormatInt(time.Now().UnixNano(), 10) + ext
+
+	// Always save compressed avatar as .jpg
+	filename := "avatar_" + strconv.Itoa(userID.(int)) + "_" + strconv.FormatInt(time.Now().UnixNano(), 10) + ".jpg"
 	uploadPath := filepath.Join(h.uploadDir, filename)
 
-	// Save file
-	if err := c.SaveUploadedFile(header, uploadPath); err != nil {
+	// Save compressed avatar
+	if err := os.WriteFile(uploadPath, compressedAvatar, 0644); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to save avatar")})
 		return
 	}
