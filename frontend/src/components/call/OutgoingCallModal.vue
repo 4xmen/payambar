@@ -27,14 +27,16 @@ const emit = defineEmits<{
       </div>
       <div class="call-info">
         <h3>{{ outgoingCall.displayName || outgoingCall.username }}</h3>
-        <p v-if="outgoingCall.status === 'ringing'" class="call-status-ringing">
-          <span class="status-dot ringing-dot"></span>
-          در حال زنگ خوردن...
-        </p>
-        <p v-else class="call-status-calling">
-          <span class="status-dot calling-dot"></span>
-          در حال برقراری ارتباط...
-        </p>
+        <transition name="fade" mode="out-in">
+          <p v-if="outgoingCall.status === 'ringing'" key="ringing" class="call-status-ringing">
+            <span class="status-dot ringing-dot"></span>
+            در حال زنگ خوردن...
+          </p>
+          <p v-else key="calling" class="call-status-calling">
+            <span class="status-dot calling-dot"></span>
+            در حال برقراری ارتباط...
+          </p>
+        </transition>
       </div>
       <div class="call-actions">
         <button type="button" class="btn-decline" @click="emit('cancel')">

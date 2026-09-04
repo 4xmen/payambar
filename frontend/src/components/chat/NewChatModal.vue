@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { nextTick, ref, watch, onMounted } from 'vue';
 import type { SearchUser } from '../../types';
 import { API_URL, authHeaders } from '../../services/api';
 import UserSearchItem from './UserSearchItem.vue';
@@ -23,17 +23,34 @@ const searchError = ref<string>('');
 let searchTimeout: any = null;
 
 const DEBOUNCE_MS = 500;
+const isClosing = ref(false);
+
+onMounted(() => {
+  if (props.isOpen && dialogRef.value && !dialogRef.value.open) {
+    if (typeof dialogRef.value.showModal === 'function') {
+      dialogRef.value.showModal();
+    }
+    dialogRef.value.setAttribute('open', '');
+    nextTick(() => {
+      searchInputRef.value?.focus();
+    });
+  }
+});
 
 watch(
   () => props.isOpen,
   (open) => {
     if (open) {
+      isClosing.value = false;
       searchQuery.value = '';
       searchResults.value = [];
       searchError.value = '';
       searchLoading.value = false;
       if (dialogRef.value && !dialogRef.value.open) {
-        dialogRef.value.showModal();
+        if (typeof dialogRef.value.showModal === 'function') {
+          dialogRef.value.showModal();
+        }
+        dialogRef.value.setAttribute('open', '');
       }
       nextTick(() => {
         searchInputRef.value?.focus();
@@ -43,16 +60,38 @@ watch(
         clearTimeout(searchTimeout);
         searchTimeout = null;
       }
-      if (dialogRef.value?.open) {
-        dialogRef.value.close();
-      }
+      closeModal();
     }
   }
 );
 
 function closeModal() {
-  if (dialogRef.value?.open) {
-    dialogRef.value.close();
+  if (dialogRef.value?.open || dialogRef.value?.hasAttribute('open')) {
+    const supportsAllowDiscrete =
+      typeof window !== 'undefined' &&
+      window.CSS &&
+      typeof window.CSS.supports === 'function' &&
+      window.CSS.supports('transition-behavior', 'allow-discrete');
+
+    if (supportsAllowDiscrete) {
+      if (typeof dialogRef.value.close === 'function') {
+        dialogRef.value.close();
+      } else {
+        dialogRef.value.removeAttribute('open');
+      }
+    } else {
+      if (isClosing.value) return;
+      isClosing.value = true;
+      setTimeout(() => {
+        if (dialogRef.value) {
+          if (typeof dialogRef.value.close === 'function') {
+            dialogRef.value.close();
+          }
+          dialogRef.value.removeAttribute('open');
+        }
+        isClosing.value = false;
+      }, 200);
+    }
   } else {
     emit('close');
   }
@@ -116,7 +155,7 @@ function selectSearchedUser(user: SearchUser) {
   <dialog
     id="new-chat-modal"
     ref="dialogRef"
-    class="modal"
+    :class="['modal', { 'modal-closing': isClosing }]"
     aria-labelledby="new-chat-title"
     @cancel.prevent="closeModal"
     @close="handleNativeClose"

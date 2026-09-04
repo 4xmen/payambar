@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import type { Message, PullToRefreshState } from '../../types';
 import MessageItem from './MessageItem.vue';
 
@@ -25,6 +25,81 @@ const emit = defineEmits<{
 }>();
 
 const containerRef = ref<HTMLDivElement | null>(null);
+
+const knownMessageIds = ref<Set<string | number>>(new Set());
+const liveMessageIds = ref<Set<string | number>>(new Set());
+const isInitialLoadDone = ref<boolean>(false);
+
+function getMsgKey(msg: Message): string | number {
+  return msg.client_message_id || msg.id || '';
+}
+
+function isLiveMessage(msg: Message): boolean {
+  const key = getMsgKey(msg);
+  return Boolean(key && liveMessageIds.value.has(key));
+}
+
+watch(
+  () => props.currentConversationId,
+  () => {
+    knownMessageIds.value.clear();
+    liveMessageIds.value.clear();
+    isInitialLoadDone.value = false;
+  }
+);
+
+watch(
+  () => props.loadingMessages,
+  (loading) => {
+    if (!loading && !isInitialLoadDone.value && props.currentConversationId) {
+      for (const m of props.messages) {
+        const key = getMsgKey(m);
+        if (key) knownMessageIds.value.add(key);
+      }
+      isInitialLoadDone.value = true;
+    }
+  }
+);
+
+watch(
+  () => props.messages,
+  (newMsgs) => {
+    if (!props.currentConversationId) return;
+
+    if (!isInitialLoadDone.value) {
+      if (!props.loadingMessages) {
+        for (const m of newMsgs) {
+          const key = getMsgKey(m);
+          if (key) knownMessageIds.value.add(key);
+        }
+        if (newMsgs.length > 0) {
+          isInitialLoadDone.value = true;
+        }
+      }
+      return;
+    }
+
+    if (props.loadingOlderMessages) {
+      for (const m of newMsgs) {
+        const key = getMsgKey(m);
+        if (key) knownMessageIds.value.add(key);
+      }
+      return;
+    }
+
+    for (const m of newMsgs) {
+      const key = getMsgKey(m);
+      if (key && !knownMessageIds.value.has(key)) {
+        knownMessageIds.value.add(key);
+        liveMessageIds.value.add(key);
+        setTimeout(() => {
+          liveMessageIds.value.delete(key);
+        }, 1000);
+      }
+    }
+  },
+  { deep: false, immediate: true }
+);
 
 function handleScroll(event: Event) {
   emit('scroll', event);
@@ -79,11 +154,12 @@ defineExpose({
       </div>
       <MessageItem
         v-for="(msg, index) in messages"
-        :key="msg.id || msg.client_message_id || index"
+        :key="msg.client_message_id || msg.id || index"
         :message="msg"
         :index="index"
         :all-messages="messages"
         :my-user-id="myUserId"
+        :is-live="isLiveMessage(msg)"
         @open-menu="(ev, m) => emit('open-message-menu', ev, m)"
         @preview-image="(url) => emit('preview-image', url)"
       />

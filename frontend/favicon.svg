@@ -1,5 +1,77 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 24 24" fill="none" stroke="#1a1a19" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M22 8.5V5a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v16.286a.71.71 0 0 0 1.212.502l2.202-2.202A2 2 0 0 1 6.828 19H10" />
-  <path d="M20 15v-2a2 2 0 0 0-4 0v2" />
-  <rect x="14" y="15" width="8" height="5" rx="1" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Vibrant Emerald / Mint Bubble Gradient -->
+    <linearGradient id="favBubbleGrad" x1="12%" y1="10%" x2="88%" y2="90%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="45%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+
+    <!-- Top Gloss Layer -->
+    <linearGradient id="favTopGloss" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.40"/>
+      <stop offset="35%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.16"/>
+    </linearGradient>
+
+    <filter id="favDropShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.30"/>
+    </filter>
+
+    <linearGradient id="favShackle" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </linearGradient>
+
+    <linearGradient id="favLockBody" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f8fafc"/>
+    </linearGradient>
+  </defs>
+
+  <g filter="url(#favDropShadow)" transform="matrix(1.22 0 0 1.22 -56 -48)">
+    <path d="
+      M 256 96
+      C 336 96, 400 160, 400 240
+      C 400 320, 336 384, 256 384
+      C 230 384, 206 377, 184 365
+      C 152 384, 126 390, 120 389
+      C 116 388, 114 383, 117 379
+      C 123 369, 131 346, 128 326
+      C 118 301, 112 271, 112 240
+      C 112 160, 176 96, 256 96
+      Z"
+      fill="url(#favBubbleGrad)"
+    />
+    <path d="
+      M 256 96
+      C 336 96, 400 160, 400 240
+      C 400 320, 336 384, 256 384
+      C 230 384, 206 377, 184 365
+      C 152 384, 126 390, 120 389
+      C 116 388, 114 383, 117 379
+      C 123 369, 131 346, 128 326
+      C 118 301, 112 271, 112 240
+      C 112 160, 176 96, 256 96
+      Z"
+      fill="url(#favTopGloss)"
+    />
+
+    <!-- Shackle -->
+    <path d="
+      M 224 220
+      V 184
+      C 224 166, 238 152, 256 152
+      C 274 152, 288 166, 288 184
+      V 220"
+      stroke="url(#favShackle)"
+      stroke-width="18"
+      stroke-linecap="round"
+      fill="none"
+    />
+    <!-- Lock Body -->
+    <rect x="202" y="210" width="108" height="92" rx="22" fill="url(#favLockBody)"/>
+    <circle cx="256" cy="248" r="9" fill="#047857"/>
+    <path d="M 253 252 L 259 252 L 261 272 C 261 274.5, 258.8 276.5, 256 276.5 C 253.2 276.5, 251 274.5, 251 272 Z" fill="#047857"/>
+  </g>
 </svg>

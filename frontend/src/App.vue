@@ -154,7 +154,9 @@ async function onSelectConversation(conv: Conversation) {
   nextTick(() => {
     setTimeout(() => {
       chatPanelRef.value?.scrollToBottom();
-      chatPanelRef.value?.focusInput();
+      if (typeof window !== 'undefined' && window.innerWidth > 768) {
+        chatPanelRef.value?.focusInput();
+      }
     }, 100);
   });
 }
@@ -480,54 +482,188 @@ watch(
   async (authed) => {
     if (authed) {
       await onAuthenticated();
+      await restoreRouteFromUrl();
     }
   }
 );
 
-function onLogout() {
-  auth.clearAuth();
-  convs.closeConversation();
-  conversations.value = [];
-  ws.closeWebSocket(true);
-  e2ee.resetE2EEState();
-}
+const pendingAutoAnswerCallerId = ref<number | null>(null);
 
-function pushHistory(type: 'chat' | 'modal', name: string) {
-  if (typeof window !== 'undefined') {
-    window.history.pushState({ type, name, timestamp: Date.now() }, '');
+function handleAutoAnswer(callerId: number | null) {
+  if (callerId) {
+    pendingAutoAnswerCallerId.value = callerId;
+  }
+  call.pendingAutoAnswer.value = true;
+
+  if (incomingCall.value) {
+    if (!callerId || Number(incomingCall.value.sender_id) === callerId) {
+      call.pendingAutoAnswer.value = false;
+      pendingAutoAnswerCallerId.value = null;
+      onAcceptCall();
+    }
   }
 }
 
-function handlePopState() {
+function handleServiceWorkerMessage(event: MessageEvent) {
+  if (event.data?.type === 'auto_answer') {
+    const callerId = event.data.caller_id ? Number(event.data.caller_id) : null;
+    handleAutoAnswer(callerId);
+  }
+}
+
+function parseCallQueryParams() {
+  if (typeof window === 'undefined') return;
+  const params = new URLSearchParams(window.location.search);
+  const callFrom = params.get('call_from');
+  const isAutoAnswer = params.get('auto_answer') === '1';
+
+  if (callFrom) {
+    const callerId = Number(callFrom);
+    if (callerId) {
+      if (isAutoAnswer) {
+        handleAutoAnswer(callerId);
+      } else {
+        if (!call.activeCall.value && !incomingCall.value) {
+          const found = findByUserId(conversations.value, callerId);
+          call.setIncomingCall({
+            sender_id: callerId,
+            username: found?.username || `user_${callerId}`,
+            displayName: found?.display_name || `کاربر ${callerId}`,
+            avatar_url: found?.avatar_url || null,
+          });
+        }
+      }
+    }
+    params.delete('call_from');
+    params.delete('auto_answer');
+    const newSearch = params.toString();
+    const newPath = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
+    window.history.replaceState(window.history.state, '', newPath);
+  }
+}
+
+watch(
+  () => incomingCall.value,
+  (callVal) => {
+    if (callVal && (call.pendingAutoAnswer.value || pendingAutoAnswerCallerId.value !== null)) {
+      if (
+        !pendingAutoAnswerCallerId.value ||
+        Number(callVal.sender_id) === Number(pendingAutoAnswerCallerId.value)
+      ) {
+        call.pendingAutoAnswer.value = false;
+        pendingAutoAnswerCallerId.value = null;
+        onAcceptCall();
+      }
+    }
+  }
+);
+
+function pushHistory(type: 'chat' | 'modal' | 'home', name: string) {
+  if (typeof window === 'undefined') return;
+  let targetPath = '/';
+  if (type === 'chat' && name) {
+    targetPath = `/chat/${name}`;
+  } else if (type === 'modal' && name === 'profile') {
+    targetPath = '/profile';
+  } else if (type === 'modal' && name === 'new-chat') {
+    targetPath = '/new-chat';
+  } else if (type === 'home') {
+    targetPath = '/';
+  }
+
+  if (window.location.pathname === targetPath) return;
+
+  // When switching directly between conversations, replace state to avoid an infinite back stack
+  if (type === 'chat' && window.location.pathname.startsWith('/chat/')) {
+    window.history.replaceState({ type, name, timestamp: Date.now() }, '', targetPath);
+  } else {
+    window.history.pushState({ type, name, timestamp: Date.now() }, '', targetPath);
+  }
+}
+
+async function restoreConversationById(targetUserId: number) {
+  const existing = findByUserId(conversations.value, targetUserId);
+  if (existing) {
+    await onSelectConversation(existing);
+  } else {
+    const stubConv: Conversation = {
+      id: 0,
+      user_id: targetUserId,
+      username: `user_${targetUserId}`,
+      display_name: `کاربر ${targetUserId}`,
+      last_message_at: '',
+      last_message_preview: '',
+      unread_count: 0,
+      is_online: false,
+    };
+    await onSelectConversation(stubConv);
+  }
+}
+
+async function restoreRouteFromUrl() {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname;
+
+  if (path === '/profile') {
+    isProfileModalOpen.value = true;
+  } else if (path === '/new-chat') {
+    showNewChatModal.value = true;
+  } else {
+    const chatMatch = path.match(/^\/chat\/(\d+)/);
+    if (chatMatch) {
+      const targetUserId = parseInt(chatMatch[1], 10);
+      if (targetUserId) {
+        await restoreConversationById(targetUserId);
+      }
+    }
+  }
+}
+
+async function handlePopState() {
   if (messageContextMenu.show || conversationMenu.show) {
     msgs.closeMessageContextMenu();
     convs.closeConversationMenu();
   }
 
-  if (isProfileModalOpen.value) {
+  // If browser back was pressed while a modal was open, close all modals
+  if (isProfileModalOpen.value || showNewChatModal.value || showRulesModal.value) {
     isProfileModalOpen.value = false;
-    return;
-  }
-  if (showNewChatModal.value) {
     showNewChatModal.value = false;
-    return;
-  }
-  if (showRulesModal.value) {
     showRulesModal.value = false;
+  }
+
+  const path = typeof window !== 'undefined' ? window.location.pathname : '/';
+
+  if (path === '/profile') {
+    isProfileModalOpen.value = true;
     return;
   }
 
-  if (currentConversationId.value && !chatListOpen.value) {
-    convs.closeConversation();
+  if (path === '/new-chat') {
+    showNewChatModal.value = true;
+    return;
+  }
+
+  const chatMatch = path.match(/^\/chat\/(\d+)/);
+  if (chatMatch) {
+    const targetUserId = parseInt(chatMatch[1], 10);
+    if (targetUserId) {
+      if (currentConversationId.value !== targetUserId) {
+        await restoreConversationById(targetUserId);
+      } else {
+        chatListOpen.value = false;
+      }
+    }
+  } else {
+    if (currentConversationId.value || !chatListOpen.value) {
+      convs.closeConversation();
+    }
   }
 }
 
 function onBackFromChat() {
-  if (typeof window !== 'undefined' && window.history.state?.type === 'chat') {
-    window.history.back();
-  } else {
-    convs.closeConversation();
-  }
+  convs.closeConversation();
+  pushHistory('home', '');
 }
 
 function openProfileModal() {
@@ -536,10 +672,14 @@ function openProfileModal() {
 }
 
 function closeProfileModal() {
-  if (typeof window !== 'undefined' && window.history.state?.type === 'modal') {
-    window.history.back();
-  } else {
-    isProfileModalOpen.value = false;
+  isProfileModalOpen.value = false;
+  if (typeof window !== 'undefined' && window.location.pathname === '/profile') {
+    const targetPath = currentConversationId.value ? `/chat/${currentConversationId.value}` : '/';
+    window.history.replaceState(
+      { type: currentConversationId.value ? 'chat' : 'home', name: String(currentConversationId.value || '') },
+      '',
+      targetPath
+    );
   }
 }
 
@@ -549,10 +689,25 @@ function openNewChatModal() {
 }
 
 function closeNewChatModal() {
-  if (typeof window !== 'undefined' && window.history.state?.type === 'modal') {
-    window.history.back();
-  } else {
-    showNewChatModal.value = false;
+  showNewChatModal.value = false;
+  if (typeof window !== 'undefined' && window.location.pathname === '/new-chat') {
+    const targetPath = currentConversationId.value ? `/chat/${currentConversationId.value}` : '/';
+    window.history.replaceState(
+      { type: currentConversationId.value ? 'chat' : 'home', name: String(currentConversationId.value || '') },
+      '',
+      targetPath
+    );
+  }
+}
+
+function onLogout() {
+  auth.clearAuth();
+  convs.closeConversation();
+  conversations.value = [];
+  ws.closeWebSocket(true);
+  e2ee.resetE2EEState();
+  if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+    window.history.replaceState({ type: 'home', name: '' }, '', '/');
   }
 }
 
@@ -561,10 +716,15 @@ onMounted(async () => {
   setUnauthorizedHandler(onLogout);
   window.addEventListener('click', onGlobalClick);
   window.addEventListener('popstate', handlePopState);
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
+  }
+  parseCallQueryParams();
   await fetchAppVersion();
 
   if (isAuthed.value) {
     await onAuthenticated();
+    await restoreRouteFromUrl();
   }
 });
 
@@ -572,6 +732,9 @@ onBeforeUnmount(() => {
   setUnauthorizedHandler(null);
   window.removeEventListener('click', onGlobalClick);
   window.removeEventListener('popstate', handlePopState);
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage);
+  }
   msgs.cleanupVoiceRecorder();
   ws.closeWebSocket(true);
 });
@@ -589,17 +752,19 @@ onBeforeUnmount(() => {
     <!-- Authenticated Messenger Flow -->
     <div class="messenger-wrapper" v-else>
       <!-- Global Active Call Banner -->
-      <ActiveCallBar
-        v-if="activeCall"
-        :active-call="activeCall"
-        :call-duration="callDuration"
-        :chat-list-open="chatListOpen"
-        :current-conversation-id="currentConversationId"
-        :is-muted="isMuted"
-        @return-to-chat="returnToActiveCallChat"
-        @hangup="onHangupCall"
-        @toggle-mute="call.toggleMute"
-      />
+      <transition name="call-bar">
+        <ActiveCallBar
+          v-if="activeCall"
+          :active-call="activeCall"
+          :call-duration="callDuration"
+          :chat-list-open="chatListOpen"
+          :current-conversation-id="currentConversationId"
+          :is-muted="isMuted"
+          @return-to-chat="returnToActiveCallChat"
+          @hangup="onHangupCall"
+          @toggle-mute="call.toggleMute"
+        />
+      </transition>
 
       <div class="messenger-container">
         <!-- Left Panel: Chat List -->
@@ -671,18 +836,22 @@ onBeforeUnmount(() => {
       />
 
       <!-- Call Modals -->
-      <IncomingCallModal
-        v-if="incomingCall"
-        :incoming-call="incomingCall"
-        @accept="onAcceptCall"
-        @reject="onRejectCall"
-      />
+      <transition name="call-modal">
+        <IncomingCallModal
+          v-if="incomingCall"
+          :incoming-call="incomingCall"
+          @accept="onAcceptCall"
+          @reject="onRejectCall"
+        />
+      </transition>
 
-      <OutgoingCallModal
-        v-if="outgoingCall"
-        :outgoing-call="outgoingCall"
-        @cancel="onHangupCall"
-      />
+      <transition name="call-modal">
+        <OutgoingCallModal
+          v-if="outgoingCall"
+          :outgoing-call="outgoingCall"
+          @cancel="onHangupCall"
+        />
+      </transition>
     </div>
 
     <!-- Global Toast & Confirmation Modal -->

@@ -275,6 +275,7 @@ func serveStatics(router *gin.Engine) {
 	}
 
 	router.GET("/favicon.svg", serveIcon("favicon.svg", "image/svg+xml"))
+	router.GET("/favicon.ico", serveIcon("favicon.ico", "image/x-icon"))
 	router.GET("/favicon-96.png", serveIcon("favicon-96.png", "image/png"))
 	router.GET("/favicon-192.png", serveIcon("favicon-192.png", "image/png"))
 	router.GET("/favicon-512.png", serveIcon("favicon-512.png", "image/png"))

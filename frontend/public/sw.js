@@ -7,8 +7,12 @@ const PRECACHE_URLS = [
   '/index.html',
   '/manifest.json',
   '/favicon.svg',
+  '/favicon.ico',
   '/favicon-192.png',
   '/favicon-512.png',
+  '/favicon-maskable-192.png',
+  '/favicon-maskable-512.png',
+  '/apple-touch-icon.png',
   '/fonts/vazirmatn-arabic.woff2',
   '/fonts/vazirmatn-latin.woff2',
 ];

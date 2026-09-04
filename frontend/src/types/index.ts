@@ -98,7 +98,7 @@ export interface IncomingCall {
   username: string;
   displayName?: string;
   avatar_url?: string | null;
-  offer: RTCSessionDescriptionInit;
+  offer?: RTCSessionDescriptionInit | null;
 }
 
 export interface OutgoingCall {

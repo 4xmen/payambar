@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, onMounted } from 'vue';
 import ProfileTab from './tabs/ProfileTab.vue';
 import AppearanceTab from './tabs/AppearanceTab.vue';
 import NotificationsTab from './tabs/NotificationsTab.vue';
@@ -19,25 +19,61 @@ const emit = defineEmits<{
 const dialogRef = ref<HTMLDialogElement | null>(null);
 const profileTabRef = ref<InstanceType<typeof ProfileTab> | null>(null);
 const activeTab = ref<'profile' | 'appearance' | 'notifications' | 'account' | 'about'>('profile');
+const isClosing = ref(false);
+
+onMounted(() => {
+  if (props.isOpen && dialogRef.value && !dialogRef.value.open) {
+    if (typeof dialogRef.value.showModal === 'function') {
+      dialogRef.value.showModal();
+    }
+    dialogRef.value.setAttribute('open', '');
+  }
+});
 
 watch(
   () => props.isOpen,
   (open) => {
     if (open) {
+      isClosing.value = false;
       if (dialogRef.value && !dialogRef.value.open) {
-        dialogRef.value.showModal();
+        if (typeof dialogRef.value.showModal === 'function') {
+          dialogRef.value.showModal();
+        }
+        dialogRef.value.setAttribute('open', '');
       }
     } else {
-      if (dialogRef.value?.open) {
-        dialogRef.value.close();
-      }
+      closeModal();
     }
   }
 );
 
 function closeModal() {
-  if (dialogRef.value?.open) {
-    dialogRef.value.close();
+  if (dialogRef.value?.open || dialogRef.value?.hasAttribute('open')) {
+    const supportsAllowDiscrete =
+      typeof window !== 'undefined' &&
+      window.CSS &&
+      typeof window.CSS.supports === 'function' &&
+      window.CSS.supports('transition-behavior', 'allow-discrete');
+
+    if (supportsAllowDiscrete) {
+      if (typeof dialogRef.value.close === 'function') {
+        dialogRef.value.close();
+      } else {
+        dialogRef.value.removeAttribute('open');
+      }
+    } else {
+      if (isClosing.value) return;
+      isClosing.value = true;
+      setTimeout(() => {
+        if (dialogRef.value) {
+          if (typeof dialogRef.value.close === 'function') {
+            dialogRef.value.close();
+          }
+          dialogRef.value.removeAttribute('open');
+        }
+        isClosing.value = false;
+      }, 200);
+    }
   } else {
     emit('close');
   }
@@ -60,7 +96,7 @@ function handleBackdropClick(e: MouseEvent) {
   <dialog
     id="profile-modal"
     ref="dialogRef"
-    class="modal"
+    :class="['modal', { 'modal-closing': isClosing }]"
     aria-labelledby="profile-modal-title"
     @cancel.prevent="closeModal"
     @close="handleNativeClose"

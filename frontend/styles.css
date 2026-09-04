@@ -746,8 +746,7 @@ textarea:focus-visible {
    MODAL SYSTEM
    ========================================================================== */
 .modal-backdrop,
-div.modal,
-dialog.modal[open] {
+div.modal {
     position: fixed;
     inset: 0;
     background: rgba(15, 23, 42, 0.45);
@@ -769,12 +768,73 @@ dialog.modal[open] {
 
 dialog.modal {
     position: fixed;
+    inset: 0;
+    border: none;
+    padding: 1rem;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 23, 42, 0);
+    backdrop-filter: blur(0px);
+    opacity: 0;
+    transition: opacity 0.2s var(--ease-out),
+                background 0.2s var(--ease-out),
+                backdrop-filter 0.2s var(--ease-out),
+                -webkit-backdrop-filter 0.2s var(--ease-out),
+                overlay 0.2s var(--ease-out) allow-discrete,
+                display 0.2s var(--ease-out) allow-discrete;
+    transition-behavior: allow-discrete;
+}
+
+dialog.modal[open] {
+    display: flex;
+    opacity: 1;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    animation: modalFadeIn 0.2s var(--ease-out);
+}
+
+@starting-style {
+    dialog.modal[open] {
+        opacity: 0;
+        background: rgba(15, 23, 42, 0);
+        backdrop-filter: blur(0px);
+    }
+}
+
+dialog.modal::backdrop {
+    background: rgba(15, 23, 42, 0);
+    backdrop-filter: blur(0px);
+    opacity: 0;
+    transition: opacity 0.2s var(--ease-out),
+                background 0.2s var(--ease-out),
+                backdrop-filter 0.2s var(--ease-out),
+                -webkit-backdrop-filter 0.2s var(--ease-out),
+                overlay 0.2s var(--ease-out) allow-discrete,
+                display 0.2s var(--ease-out) allow-discrete;
+    transition-behavior: allow-discrete;
 }
 
 dialog.modal[open]::backdrop {
+    opacity: 1;
     background: rgba(15, 23, 42, 0.45);
     backdrop-filter: blur(4px);
     animation: modalFadeIn 0.2s var(--ease-out);
+}
+
+@starting-style {
+    dialog.modal[open]::backdrop {
+        opacity: 0;
+        background: rgba(15, 23, 42, 0);
+        backdrop-filter: blur(0px);
+    }
 }
 
 @keyframes modalFadeIn {
@@ -794,6 +854,50 @@ dialog.modal[open]::backdrop {
     flex-direction: column;
     overflow: hidden;
     animation: modalScaleIn 0.25s var(--ease-out);
+    transition: transform 0.2s var(--ease-out), opacity 0.2s var(--ease-out);
+}
+
+dialog.modal:not([open]) .modal-card,
+dialog.modal:not([open]) .modal-content {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+}
+
+dialog.modal[open] .modal-card,
+dialog.modal[open] .modal-content {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+}
+
+@starting-style {
+    dialog.modal[open] .modal-card,
+    dialog.modal[open] .modal-content {
+        opacity: 0;
+        transform: scale(0.96) translateY(8px);
+    }
+}
+
+dialog.modal.modal-closing {
+    opacity: 0 !important;
+    background: rgba(15, 23, 42, 0) !important;
+    backdrop-filter: blur(0px) !important;
+    -webkit-backdrop-filter: blur(0px) !important;
+}
+
+dialog.modal.modal-closing .modal-card,
+dialog.modal.modal-closing .modal-content {
+    opacity: 0 !important;
+    transform: scale(0.96) translateY(8px) !important;
+}
+
+@supports (transition-behavior: allow-discrete) {
+    dialog.modal[open] {
+        animation: none;
+    }
+    dialog.modal[open] .modal-card,
+    dialog.modal[open] .modal-content {
+        animation: none;
+    }
 }
 
 @keyframes modalScaleIn {
@@ -1060,6 +1164,12 @@ dialog.modal[open]::backdrop {
 }
 
 .conversation-item:hover {
+    background: var(--surface-muted);
+}
+
+.conversation-item:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
     background: var(--surface-muted);
 }
 
@@ -1665,14 +1775,20 @@ dialog.modal[open]::backdrop {
     transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
-.message:hover .message-menu-btn {
+.message:hover .message-menu-btn,
+.message-menu-btn:focus,
+.message-menu-btn:focus-visible {
     opacity: 0.7;
 }
 
-.message-menu-btn:hover {
+.message-menu-btn:hover,
+.message-menu-btn:focus,
+.message-menu-btn:focus-visible {
     opacity: 1;
     background: var(--surface-hover);
     color: var(--ink);
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
 }
 
 /* Media in Messages */
@@ -2137,10 +2253,15 @@ dialog.modal[open]::backdrop {
     border: 2px solid var(--avatar-border);
     cursor: pointer;
     transition: transform 0.2s ease;
+    padding: 0;
+    font-family: inherit;
 }
 
-.profile-avatar-large:hover {
+.profile-avatar-large:hover,
+.profile-avatar-large:focus-visible {
     transform: scale(1.04);
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
 }
 
 .avatar-edit-overlay {
@@ -2158,7 +2279,8 @@ dialog.modal[open]::backdrop {
     transition: opacity 0.15s ease;
 }
 
-.profile-avatar-large:hover .avatar-edit-overlay {
+.profile-avatar-large:hover .avatar-edit-overlay,
+.profile-avatar-large:focus-visible .avatar-edit-overlay {
     opacity: 1;
 }
 
@@ -2865,18 +2987,81 @@ dialog.modal[open]::backdrop {
 /* ==========================================================================
    CONFIRMATION MODAL
    ========================================================================== */
+dialog.confirm-modal-dialog {
+    position: fixed;
+    inset: 0;
+    border: none;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0);
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+    opacity: 0;
+    transition: opacity 0.2s var(--ease-out),
+                background 0.2s var(--ease-out),
+                backdrop-filter 0.2s var(--ease-out),
+                -webkit-backdrop-filter 0.2s var(--ease-out),
+                overlay 0.2s var(--ease-out) allow-discrete,
+                display 0.2s var(--ease-out) allow-discrete;
+    transition-behavior: allow-discrete;
+}
+
 dialog.confirm-modal-dialog[open] {
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 1rem;
     z-index: 10000;
-}
-
-dialog.confirm-modal-dialog[open]::backdrop {
+    opacity: 1;
     background: rgba(0, 0, 0, 0.65);
     backdrop-filter: blur(5px);
     -webkit-backdrop-filter: blur(5px);
+}
+
+@starting-style {
+    dialog.confirm-modal-dialog[open] {
+        opacity: 0;
+        background: rgba(0, 0, 0, 0);
+        backdrop-filter: blur(0px);
+        -webkit-backdrop-filter: blur(0px);
+    }
+}
+
+dialog.confirm-modal-dialog::backdrop {
+    background: rgba(0, 0, 0, 0);
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+    opacity: 0;
+    transition: opacity 0.2s var(--ease-out),
+                background 0.2s var(--ease-out),
+                backdrop-filter 0.2s var(--ease-out),
+                -webkit-backdrop-filter 0.2s var(--ease-out),
+                overlay 0.2s var(--ease-out) allow-discrete,
+                display 0.2s var(--ease-out) allow-discrete;
+    transition-behavior: allow-discrete;
+}
+
+dialog.confirm-modal-dialog[open]::backdrop {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+}
+
+@starting-style {
+    dialog.confirm-modal-dialog[open]::backdrop {
+        opacity: 0;
+        background: rgba(0, 0, 0, 0);
+        backdrop-filter: blur(0px);
+        -webkit-backdrop-filter: blur(0px);
+    }
 }
 
 .confirm-modal-card {
@@ -2892,6 +3077,45 @@ dialog.confirm-modal-dialog[open]::backdrop {
     gap: 0.85rem;
     direction: rtl;
     text-align: right;
+    transition: transform 0.2s var(--ease-out), opacity 0.2s var(--ease-out);
+}
+
+dialog.confirm-modal-dialog:not([open]) .confirm-modal-card {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+}
+
+dialog.confirm-modal-dialog[open] .confirm-modal-card {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+}
+
+@starting-style {
+    dialog.confirm-modal-dialog[open] .confirm-modal-card {
+        opacity: 0;
+        transform: scale(0.96) translateY(8px);
+    }
+}
+
+dialog.confirm-modal-dialog.modal-closing {
+    opacity: 0 !important;
+    background: rgba(0, 0, 0, 0) !important;
+    backdrop-filter: blur(0px) !important;
+    -webkit-backdrop-filter: blur(0px) !important;
+}
+
+dialog.confirm-modal-dialog.modal-closing .confirm-modal-card {
+    opacity: 0 !important;
+    transform: scale(0.96) translateY(8px) !important;
+}
+
+@supports (transition-behavior: allow-discrete) {
+    dialog.confirm-modal-dialog[open] {
+        animation: none;
+    }
+    dialog.confirm-modal-dialog[open] .confirm-modal-card {
+        animation: none;
+    }
 }
 
 .confirm-modal-title {
@@ -3185,32 +3409,48 @@ dialog.confirm-modal-dialog[open]::backdrop {
     }
 
     .chat-panel {
-        border-radius: 0;
+        display: flex;
+        position: absolute;
+        inset: 0;
+        width: 100%;
         height: 100%;
+        border-radius: 0;
         min-height: 0;
         background: var(--bg);
+        transform: translateX(0);
+        visibility: visible;
+        pointer-events: auto;
+        transition: transform 0.28s var(--ease-out), visibility 0.28s;
     }
 
     .chat-list-panel {
-        display: none;
-        max-height: none;
-        border-bottom: none;
-        border-left: none;
-    }
-
-    .chat-list-panel.mobile-show {
         display: flex;
         position: absolute;
         inset: 0;
         width: 100%;
         max-width: none;
+        height: 100%;
         z-index: 200;
-        box-shadow: none;
+        transform: translateX(100%);
+        visibility: hidden;
+        pointer-events: none;
+        transition: transform 0.28s var(--ease-out), visibility 0.28s;
+        border-bottom: none;
+        border-left: none;
         background: var(--surface);
+        box-shadow: none;
+    }
+
+    .chat-list-panel.mobile-show {
+        transform: translateX(0);
+        visibility: visible;
+        pointer-events: auto;
     }
 
     .chat-panel.mobile-hide {
-        display: none;
+        transform: translateX(-100%);
+        visibility: hidden;
+        pointer-events: none;
     }
 
     .mobile-only {
@@ -3294,6 +3534,33 @@ dialog.confirm-modal-dialog[open]::backdrop {
         animation: modalSlideUp 0.28s var(--ease-out);
     }
 
+    dialog.modal:not([open]) .modal-card,
+    dialog.modal:not([open]) .modal-content {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+
+    dialog.modal[open] .modal-card,
+    dialog.modal[open] .modal-content {
+        transform: translateY(0);
+        opacity: 1;
+        transition: transform 0.28s var(--ease-out), opacity 0.28s var(--ease-out);
+    }
+
+    @starting-style {
+        dialog.modal[open] .modal-card,
+        dialog.modal[open] .modal-content {
+            transform: translateY(100%);
+            opacity: 0;
+        }
+    }
+
+    dialog.modal.modal-closing .modal-card,
+    dialog.modal.modal-closing .modal-content {
+        transform: translateY(100%) !important;
+        opacity: 0 !important;
+    }
+
     .profile-modal-footer {
         padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
     }
@@ -3307,7 +3574,101 @@ dialog.confirm-modal-dialog[open]::backdrop {
         }
     }
 
-    .message:hover .message-menu-btn {
+    .message:hover .message-menu-btn,
+    .message-menu-btn:focus,
+    .message-menu-btn:focus-visible {
         opacity: 0.7;
+    }
+}
+
+/* ==========================================================================
+   CALL & AUTH TRANSITIONS & MICRO-INTERACTIONS
+   ========================================================================== */
+.call-bar-enter-active,
+.call-bar-leave-active {
+    transition: transform 0.25s var(--ease-out), opacity 0.25s var(--ease-out);
+}
+.call-bar-enter-from,
+.call-bar-leave-to {
+    transform: translateY(-100%);
+    opacity: 0;
+}
+
+.call-modal-enter-active,
+.call-modal-leave-active {
+    transition: opacity 0.25s var(--ease-out);
+}
+.call-modal-enter-active .modal-content,
+.call-modal-leave-active .modal-content {
+    transition: transform 0.25s var(--ease-out), opacity 0.25s var(--ease-out);
+}
+.call-modal-enter-from,
+.call-modal-leave-to {
+    opacity: 0;
+}
+.call-modal-enter-from .modal-content,
+.call-modal-leave-to .modal-content {
+    transform: scale(0.95) translateY(10px);
+    opacity: 0;
+}
+
+.auth-mode-enter-active,
+.auth-mode-leave-active {
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.auth-mode-enter-from {
+    opacity: 0;
+    transform: translateY(8px);
+}
+.auth-mode-leave-to {
+    opacity: 0;
+    transform: translateY(-8px);
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+    transition: opacity 0.2s ease;
+}
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+    opacity: 0;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+    transition: opacity 0.2s var(--ease-out);
+}
+.fade-enter-from,
+.fade-leave-to {
+    opacity: 0;
+}
+
+/* Safe chat message entrance animation (applied only to live messages) */
+.message.message-live-enter {
+    animation: messageSlideIn 0.25s var(--ease-out);
+}
+
+@keyframes messageSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* ==========================================================================
+   REDUCED MOTION (Accessibility)
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
     }
 }

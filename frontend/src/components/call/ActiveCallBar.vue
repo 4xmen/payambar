@@ -49,14 +49,16 @@ const emit = defineEmits<{
         </svg>
       </button>
 
-      <button
-        type="button"
-        class="btn-return-call"
-        v-if="chatListOpen || Number(currentConversationId) !== Number(activeCall.user_id)"
-        @click.stop="emit('return-to-chat')"
-      >
-        بازگشت به چت
-      </button>
+      <transition name="fade">
+        <button
+          type="button"
+          class="btn-return-call"
+          v-if="chatListOpen || Number(currentConversationId) !== Number(activeCall.user_id)"
+          @click.stop="emit('return-to-chat')"
+        >
+          بازگشت به چت
+        </button>
+      </transition>
       <button type="button" class="btn-hangup" @click.stop="emit('hangup')">
         قطع تماس
       </button>

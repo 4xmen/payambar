@@ -72,10 +72,14 @@ defineExpose({
 <template>
   <div class="profile-tab-content">
     <div class="profile-avatar-section">
-      <div
+      <button
+        type="button"
         class="profile-avatar-large"
         @click="avatarInputRef?.click()"
+        @keydown.enter.prevent="avatarInputRef?.click()"
+        @keydown.space.prevent="avatarInputRef?.click()"
         title="تغییر آواتار"
+        aria-label="تغییر تصویر پروفایل"
       >
         <img v-if="myAvatarUrl" :src="myAvatarUrl" alt="آواتار" class="avatar-img-large" />
         <span v-else>{{ (username || '?').charAt(0).toUpperCase() }}</span>
@@ -96,7 +100,7 @@ defineExpose({
             <circle cx="12" cy="13" r="4" />
           </svg>
         </div>
-      </div>
+      </button>
       <input
         type="file"
         ref="avatarInputRef"

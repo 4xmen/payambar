@@ -18,7 +18,11 @@ const emit = defineEmits<{
   <div
     class="conversation-item"
     :class="{ active: isActive }"
+    role="button"
+    tabindex="0"
     @click="emit('select', conversation)"
+    @keydown.enter.self.prevent="emit('select', conversation)"
+    @keydown.space.self.prevent="emit('select', conversation)"
   >
     <div class="conversation-avatar">
       <img

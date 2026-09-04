@@ -153,6 +153,17 @@ describe('Composables', () => {
       expect(e2ee.ready).toBe(false);
       expect(e2ee.ownerUserId).toBeNull();
     });
+
+    it('shares singleton state across multiple instances', () => {
+      const inst1 = useE2EE();
+      const inst2 = useE2EE();
+      inst1.e2ee.ready = true;
+      inst1.e2ee.deviceId = 'dev-singleton';
+      expect(inst2.e2ee.ready).toBe(true);
+      expect(inst2.e2ee.deviceId).toBe('dev-singleton');
+      inst1.resetE2EEState();
+      expect(inst2.e2ee.ready).toBe(false);
+    });
   });
 
   describe('useNetworkStatus', () => {

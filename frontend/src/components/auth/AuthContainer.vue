@@ -23,7 +23,9 @@ function onAuthSuccess() {
   <div class="auth-container">
     <div class="auth-card">
       <div class="auth-brand">
-        <div class="auth-logo">P</div>
+        <div class="auth-logo">
+          <img src="/favicon.svg" alt="PayamBar" width="30" height="30" />
+        </div>
         <div class="auth-title">
           <h1>
             PayamBar
@@ -51,8 +53,10 @@ function onAuthSuccess() {
         </button>
       </div>
 
-      <LoginForm v-if="authTab === 'login'" @success="onAuthSuccess" />
-      <RegisterForm v-else @success="onAuthSuccess" />
+      <transition name="auth-mode" mode="out-in">
+        <LoginForm v-if="authTab === 'login'" @success="onAuthSuccess" />
+        <RegisterForm v-else @success="onAuthSuccess" />
+      </transition>
 
       <div class="auth-footer">
         <button type="button" class="link-btn" @click="showRulesModal = true">
@@ -61,6 +65,8 @@ function onAuthSuccess() {
       </div>
     </div>
 
-    <RulesModal v-if="showRulesModal" @close="showRulesModal = false" />
+    <transition name="modal-fade">
+      <RulesModal v-if="showRulesModal" @close="showRulesModal = false" />
+    </transition>
   </div>
 </template>

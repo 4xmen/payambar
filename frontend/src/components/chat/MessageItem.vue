@@ -14,6 +14,7 @@ defineProps<{
   index: number;
   allMessages: Message[];
   myUserId: number | null;
+  isLive?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -25,7 +26,10 @@ const emit = defineEmits<{
 <template>
   <div
     class="message"
-    :class="Number(message.sender_id) === Number(myUserId) ? 'sent' : 'received'"
+    :class="[
+      Number(message.sender_id) === Number(myUserId) ? 'sent' : 'received',
+      { 'message-live-enter': isLive },
+    ]"
   >
     <div class="message-bubble" :class="{ 'media-bubble': message.file_url }">
       <template v-if="message.file_url">

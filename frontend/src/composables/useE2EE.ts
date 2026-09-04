@@ -12,21 +12,21 @@ import {
 const TTL_POPULATED_MS = 30000;
 const TTL_EMPTY_MS = 3000;
 
-export function useE2EE() {
-  const e2ee = reactive<E2EEState>({
-    enabled: true,
-    ready: false,
-    ownerUserId: null,
-    deviceId: '',
-    keyId: '',
-    privateJwk: null,
-    publicJwk: null,
-    recipientKeys: {},
-    recipientKeyPromises: {},
-    recipientKeyMeta: {},
-    noKeyWarnedRecipients: {},
-  });
+const e2ee = reactive<E2EEState>({
+  enabled: true,
+  ready: false,
+  ownerUserId: null,
+  deviceId: '',
+  keyId: '',
+  privateJwk: null,
+  publicJwk: null,
+  recipientKeys: {},
+  recipientKeyPromises: {},
+  recipientKeyMeta: {},
+  noKeyWarnedRecipients: {},
+});
 
+export function useE2EE() {
   function resetE2EEState() {
     e2ee.ready = false;
     e2ee.ownerUserId = null;
@@ -278,6 +278,23 @@ export function useE2EE() {
   ): Promise<Message> {
     if (!msg?.encrypted || !msg?.ciphertext || !msg?.iv) return msg;
     try {
+      if (!e2ee.privateJwk && myUserId && typeof window !== 'undefined') {
+        const storagePrefix = `e2ee:${myUserId}`;
+        const storedPrivate = localStorage.getItem(`${storagePrefix}:private_jwk`);
+        const storedPublic = localStorage.getItem(`${storagePrefix}:public_jwk`);
+        const storedDeviceId = localStorage.getItem(`${storagePrefix}:device_id`);
+        const storedKeyId = localStorage.getItem(`${storagePrefix}:key_id`);
+        if (storedPrivate && storedPublic && storedDeviceId && storedKeyId) {
+          try {
+            e2ee.privateJwk = JSON.parse(storedPrivate);
+            e2ee.publicJwk = JSON.parse(storedPublic);
+            e2ee.deviceId = storedDeviceId;
+            e2ee.keyId = storedKeyId;
+            e2ee.ownerUserId = myUserId;
+            e2ee.ready = true;
+          } catch {}
+        }
+      }
       if (!e2ee.privateJwk) return { ...msg, content: '🔒 پیام رمزنگاری شده' };
       const isOutgoing = Number(msg.sender_id) === Number(myUserId);
       const peerId = isOutgoing ? Number(msg.receiver_id) : Number(msg.sender_id);

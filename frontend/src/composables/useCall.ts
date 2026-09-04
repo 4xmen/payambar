@@ -259,9 +259,11 @@ export function useCall() {
         peerConnection.value?.addTrack(track, stream);
       });
 
-      await peerConnection.value!.setRemoteDescription(
-        new RTCSessionDescription(incomingCall.value.offer)
-      );
+      if (incomingCall.value.offer) {
+        await peerConnection.value!.setRemoteDescription(
+          new RTCSessionDescription(incomingCall.value.offer)
+        );
+      }
       await flushPendingIceCandidates();
       const answer = await peerConnection.value!.createAnswer();
       await peerConnection.value!.setLocalDescription(answer);
