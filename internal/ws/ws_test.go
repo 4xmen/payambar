@@ -718,3 +718,43 @@ func TestHubStop(t *testing.T) {
 	// Double Stop should not panic
 	hub.Stop()
 }
+
+func TestPendingMessagesDeliveredOnConnect(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Sent by user1 while user2 was offline.
+	res, err := db.Exec("INSERT INTO messages (sender_id, receiver_id, content, status) VALUES (1, 2, 'hi', 'sent')")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgID, _ := res.LastInsertId()
+
+	hub := NewHub(db)
+	defer hub.Stop()
+	go hub.Run()
+
+	sender := &Client{userID: 1, hub: hub, send: make(chan interface{}, 16)}
+	hub.register <- sender
+	time.Sleep(20 * time.Millisecond)
+
+	// user2 connects -> pending message becomes delivered, sender is notified.
+	hub.register <- &Client{userID: 2, hub: hub, send: make(chan interface{}, 16)}
+
+	select {
+	case ev := <-sender.send:
+		m, ok := ev.(*MessageEvent)
+		if !ok || m.Type != "status_update" || m.Status != "delivered" || m.MessageID != int(msgID) {
+			t.Fatalf("unexpected event: %#v", ev)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("sender was not notified of delivery")
+	}
+
+	var status string
+	var deliveredAt sql.NullString
+	db.QueryRow("SELECT status, delivered_at FROM messages WHERE id = ?", msgID).Scan(&status, &deliveredAt)
+	if status != "delivered" || !deliveredAt.Valid {
+		t.Errorf("status=%q delivered_at=%v, want delivered with timestamp", status, deliveredAt)
+	}
+}
