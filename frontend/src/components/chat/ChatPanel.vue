@@ -26,6 +26,7 @@ const props = defineProps<{
   pullToRefresh: PullToRefreshState;
   recordingVoice: boolean;
   recordingElapsedSec: number;
+  recordingLevels?: number[];
   uploadingFile: boolean;
   sendingVoice: boolean;
 }>();
@@ -201,6 +202,7 @@ defineExpose({
       v-model:message-text="messageText"
       :recording-voice="recordingVoice"
       :recording-elapsed-sec="recordingElapsedSec"
+      :recording-levels="recordingLevels"
       :uploading-file="uploadingFile"
       :sending-voice="sendingVoice"
       @send="emit('send-message')"

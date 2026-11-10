@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
 import { formatRecordingDuration } from '../../services/funcs';
 
 const messageText = defineModel<string>('messageText', { default: '' });
@@ -8,6 +8,7 @@ const props = defineProps<{
   show: boolean;
   recordingVoice: boolean;
   recordingElapsedSec: number;
+  recordingLevels?: number[];
   uploadingFile: boolean;
   sendingVoice: boolean;
 }>();
@@ -23,6 +24,25 @@ const fileInputRef = ref<HTMLInputElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const isDraggingOver = ref<boolean>(false);
 
+// The textarea is not rendered while recording, so listen globally.
+function onRecordingKey(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    emit('cancel-voice');
+  } else if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    emit('toggle-voice');
+  }
+}
+watch(
+  () => props.recordingVoice,
+  (on) => {
+    if (on) window.addEventListener('keydown', onRecordingKey);
+    else window.removeEventListener('keydown', onRecordingKey);
+  }
+);
+onBeforeUnmount(() => window.removeEventListener('keydown', onRecordingKey));
+
 function resizeTextarea() {
   const input = textareaRef.value;
   if (!input) return;
@@ -31,11 +51,6 @@ function resizeTextarea() {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && props.recordingVoice) {
-    event.preventDefault();
-    emit('cancel-voice');
-    return;
-  }
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     emit('send');
@@ -118,7 +133,46 @@ defineExpose({
     @dragleave="onDragLeave"
     @drop="onDrop"
   >
-    <div class="input-container">
+    <div v-if="recordingVoice" class="input-container recording-panel" role="group" aria-label="ضبط پیام صوتی">
+      <button
+        type="button"
+        class="icon-btn ghost rec-cancel"
+        @click="emit('cancel-voice')"
+        aria-label="لغو ضبط صدا"
+        title="لغو ضبط (Esc)"
+      >
+        <svg class="icon-svg" viewBox="0 0 24 24">
+          <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2m-6 5v6m4-6v6" />
+        </svg>
+      </button>
+      <div class="rec-live" role="timer" aria-live="off">
+        <span class="recording-pulse-dot"></span>
+        <span class="rec-time">{{ formatRecordingDuration(recordingElapsedSec) }}</span>
+        <div class="rec-wave" aria-hidden="true">
+          <span
+            v-for="(lvl, i) in (recordingLevels || [])"
+            :key="i"
+            class="rec-bar"
+            :style="{ height: Math.round(lvl * 100) + '%' }"
+          ></span>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="icon-btn solid send-btn"
+        style="direction: ltr;"
+        @click="emit('toggle-voice')"
+        aria-label="توقف و ارسال پیام صوتی"
+        title="ارسال پیام صوتی"
+      >
+        <svg class="icon-svg" viewBox="0 0 24 24">
+          <path d="m12 19-7-7 7-7" />
+          <path d="M19 12H5" />
+        </svg>
+      </button>
+    </div>
+
+    <div v-else class="input-container">
       <input
         type="file"
         ref="fileInputRef"
@@ -181,25 +235,6 @@ defineExpose({
       </button>
     </div>
 
-    <div v-if="recordingVoice" class="recording-indicator-row">
-      <div class="recording-status">
-        <span class="recording-pulse-dot"></span>
-        <span>در حال ضبط صدا: {{ formatRecordingDuration(recordingElapsedSec) }}</span>
-      </div>
-      <button
-        type="button"
-        class="btn-cancel-voice"
-        @click="emit('cancel-voice')"
-        aria-label="لغو ضبط صدا"
-        title="لغو ضبط صدا"
-      >
-        <svg class="icon-svg" viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" fill="none" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-        <span>لغو</span>
-      </button>
-    </div>
     <div v-if="sendingVoice" class="upload-progress" role="status">در حال ارسال پیام صوتی...</div>
     <div v-if="uploadingFile" class="upload-progress" role="status">در حال آپلود...</div>
   </div>

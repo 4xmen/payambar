@@ -21,6 +21,13 @@ const uploadingFile = ref<boolean>(false);
 const recordingVoice = ref<boolean>(false);
 const recordingElapsedSec = ref<number>(0);
 const sendingVoice = ref<boolean>(false);
+const recordingLevels = ref<number[]>([]);
+export const MAX_VOICE_SEC = 300;
+const MIN_VOICE_SEC = 1;
+const LEVEL_BARS = 40;
+
+let levelTimer: any = null;
+let audioCtx: AudioContext | null = null;
 
 let recordingTimer: any = null;
 let recordingStream: MediaStream | null = null;
@@ -204,7 +211,44 @@ export function useMessages() {
     }
   }
 
+  function stopLevelMeter() {
+    if (levelTimer) {
+      clearInterval(levelTimer);
+      levelTimer = null;
+    }
+    if (audioCtx) {
+      audioCtx.close().catch(() => {});
+      audioCtx = null;
+    }
+    recordingLevels.value = [];
+  }
+
+  function startLevelMeter(stream: MediaStream) {
+    try {
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!Ctx) return;
+      audioCtx = new Ctx();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+      const data = new Uint8Array(analyser.fftSize);
+      recordingLevels.value = new Array(LEVEL_BARS).fill(0.05);
+      levelTimer = setInterval(() => {
+        analyser.getByteTimeDomainData(data);
+        let peak = 0;
+        for (let i = 0; i < data.length; i++) {
+          peak = Math.max(peak, Math.abs(data[i] - 128) / 128);
+        }
+        const level = Math.min(1, Math.max(0.05, peak * 1.8));
+        recordingLevels.value = [...recordingLevels.value.slice(1), level];
+      }, 70);
+    } catch {
+      // Level meter is cosmetic; recording works without it.
+    }
+  }
+
   function cleanupVoiceRecorder() {
+    stopLevelMeter();
     if (recordingTimer) {
       clearInterval(recordingTimer);
       recordingTimer = null;
@@ -249,6 +293,7 @@ export function useMessages() {
         }
       };
 
+      startLevelMeter(stream);
       recorder.start(250);
       recordingTimer = setInterval(() => {
         recordingElapsedSec.value += 1;
@@ -256,7 +301,11 @@ export function useMessages() {
       return true;
     } catch (err) {
       console.error('Voice recording error:', err);
-      useToast().showToast('دسترسی میکروفون لازم است', 'error');
+      const denied = (err as DOMException)?.name === 'NotAllowedError';
+      useToast().showToast(
+        denied ? 'دسترسی به میکروفون مسدود است؛ آن را در تنظیمات مرورگر فعال کنید' : 'میکروفونی یافت نشد',
+        'error'
+      );
       cleanupVoiceRecorder();
       return false;
     }
@@ -264,6 +313,11 @@ export function useMessages() {
 
   function stopVoiceRecordingAndSend(onAudioFileReady: (file: File) => Promise<void>) {
     if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+    if (recordingElapsedSec.value < MIN_VOICE_SEC) {
+      cleanupVoiceRecorder();
+      useToast().showToast('پیام صوتی خیلی کوتاه است', 'error');
+      return;
+    }
     if (recordingTimer) {
       clearInterval(recordingTimer);
       recordingTimer = null;
@@ -409,6 +463,7 @@ export function useMessages() {
     uploadingFile,
     recordingVoice,
     recordingElapsedSec,
+    recordingLevels,
     sendingVoice,
     messageContextMenu,
     pullToRefresh,

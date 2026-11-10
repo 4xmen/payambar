@@ -7,7 +7,7 @@ import { findByUserId, markConversationRead } from './services/conversations';
 
 import { useAuth } from './composables/useAuth';
 import { useConversations } from './composables/useConversations';
-import { useMessages } from './composables/useMessages';
+import { useMessages, MAX_VOICE_SEC } from './composables/useMessages';
 import { useCall } from './composables/useCall';
 import { useE2EE } from './composables/useE2EE';
 import { useToast } from './composables/useToast';
@@ -83,6 +83,7 @@ const {
   messageText,
   recordingVoice,
   recordingElapsedSec,
+  recordingLevels,
   uploadingFile,
   sendingVoice,
   messageContextMenu,
@@ -241,6 +242,14 @@ async function onToggleVoice() {
   }
   await msgs.startVoiceRecording();
 }
+
+// Auto-stop and send at the maximum voice length.
+watch(recordingElapsedSec, (sec) => {
+  if (recordingVoice.value && sec >= MAX_VOICE_SEC) {
+    toast.showToast('به حداکثر زمان ضبط رسیدید؛ پیام ارسال شد');
+    onToggleVoice();
+  }
+});
 
 async function onLoadOlder() {
   if (
@@ -835,6 +844,7 @@ onBeforeUnmount(() => {
           v-model:message-text="messageText"
           :recording-voice="recordingVoice"
           :recording-elapsed-sec="recordingElapsedSec"
+          :recording-levels="recordingLevels"
           :uploading-file="uploadingFile"
           :sending-voice="sendingVoice"
           @back="onBackFromChat"

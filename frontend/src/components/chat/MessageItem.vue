@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Message } from '../../types';
+import VoicePlayer from './VoicePlayer.vue';
 import {
   formatTime,
   isAudioMessage,
@@ -67,7 +68,7 @@ const emit = defineEmits<{
         <!-- Audio -->
         <template v-else-if="isAudioMessage(message)">
           <div class="voice-message">
-            <audio :src="message.file_url" controls preload="metadata"></audio>
+            <VoicePlayer :src="message.file_url" />
           </div>
         </template>
 
