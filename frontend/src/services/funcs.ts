@@ -290,6 +290,56 @@ export function getConversationPreview(
   return '';
 }
 
+export interface TextSegment {
+  text: string;
+  href?: string;
+}
+
+const URL_RE = /\b(https?:\/\/[^\s<>"']+)/gi;
+const TRAILING_PUNCT_RE = /[.,;:!?)\]}،؛؟»]+$/;
+
+/** Splits text into plain and http(s) link segments (never javascript:/data: etc). */
+export function linkifyText(text: string | null | undefined): TextSegment[] {
+  const input = text || '';
+  const out: TextSegment[] = [];
+  let last = 0;
+  for (const m of input.matchAll(URL_RE)) {
+    const start = m.index ?? 0;
+    let url = m[0];
+    const trail = url.match(TRAILING_PUNCT_RE)?.[0] || '';
+    if (trail) url = url.slice(0, -trail.length);
+    if (start > last) out.push({ text: input.slice(last, start) });
+    out.push({ text: url, href: url });
+    last = start + url.length;
+  }
+  if (last < input.length) out.push({ text: input.slice(last) });
+  return out.length ? out : [{ text: input }];
+}
+
+/** True for short messages made only of emoji (rendered larger, bubble-less). */
+export function isEmojiOnly(text: string | null | undefined): boolean {
+  const t = (text || '').trim();
+  if (!t || t.length > 24) return false;
+  try {
+    return /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\u200d|\ufe0f|\s)+$/u.test(t);
+  } catch {
+    return false;
+  }
+}
+
+export function formatFileSize(bytes: number | null | undefined): string {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function fileExtension(name: string | null | undefined): string {
+  const m = /\.([a-z0-9]{1,5})$/i.exec(name || '');
+  return m ? m[1].toUpperCase() : 'FILE';
+}
+
 export function shouldShowMessageStatus(
   msg: Message | null | undefined,
   index: number,

@@ -1,13 +1,20 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import type { Message } from '../../types';
 import VoicePlayer from './VoicePlayer.vue';
 import {
+  fileExtension,
+  isEmojiOnly,
+  linkifyText,
   formatTime,
   isAudioMessage,
   isImageMessage,
   isVideoMessage,
   shouldShowMessageStatus,
 } from '../../services/funcs';
+
+const imageLoaded = ref(false);
+const imageFailed = ref(false);
 
 defineProps<{
   message: Message;
@@ -34,10 +41,15 @@ const emit = defineEmits<{
         'message-live-enter': isLive,
         'group-prev': groupedWithPrev,
         'group-next': groupedWithNext,
+        'emoji-only': !message.file_url && isEmojiOnly(message.content),
       },
     ]"
   >
-    <div class="message-bubble" :class="{ 'media-bubble': message.file_url }">
+    <div
+      class="message-bubble"
+      :class="{ 'media-bubble': message.file_url }"
+      @contextmenu.prevent="emit('open-menu', $event, message)"
+    >
       <template v-if="message.file_url">
         <!-- Image -->
         <template v-if="isImageMessage(message)">
@@ -48,9 +60,14 @@ const emit = defineEmits<{
               @click="message.file_url && emit('preview-image', message.file_url)"
               aria-label="مشاهده تصویر"
             >
+              <span v-if="imageFailed" class="image-fallback">تصویر بارگذاری نشد</span>
               <img
+                v-else
                 :src="message.file_url"
                 class="message-image"
+                :class="{ loaded: imageLoaded }"
+                @load="imageLoaded = true"
+                @error="imageFailed = true"
                 :alt="message.file_name || 'image'"
                 loading="lazy"
               />
@@ -74,19 +91,30 @@ const emit = defineEmits<{
 
         <!-- Generic File -->
         <template v-else>
-          <a :href="message.file_url" target="_blank" class="file-link" download>
-            <svg class="icon-svg" viewBox="0 0 24 24">
-              <path
-                d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
-              />
-            </svg>
-            {{ message.file_name || 'دانلود فایل' }}
+          <a :href="message.file_url" target="_blank" rel="noopener" class="file-link" download>
+            <span class="file-ext" aria-hidden="true">{{ fileExtension(message.file_name) }}</span>
+            <span class="file-meta">
+              <span class="file-name" dir="auto">{{ message.file_name || 'فایل' }}</span>
+              <span class="file-action">دانلود</span>
+            </span>
           </a>
         </template>
       </template>
 
       <!-- Text -->
-      <template v-else>{{ message.content }}</template>
+      <template v-else>
+        <template v-for="(seg, i) in linkifyText(message.content)" :key="i"
+          ><a
+            v-if="seg.href"
+            :href="seg.href"
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            class="message-link"
+            @click.stop
+            >{{ seg.text }}</a
+          ><template v-else>{{ seg.text }}</template></template
+        >
+      </template>
     </div>
 
     <div class="message-footer">

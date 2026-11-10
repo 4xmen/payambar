@@ -429,8 +429,8 @@ describe('Component Unit Tests', () => {
         },
       });
 
-      expect(wrapper.find('.recording-indicator-row').exists()).toBe(true);
-      const cancelBtn = wrapper.find('.btn-cancel-voice');
+      expect(wrapper.find('.recording-panel').exists()).toBe(true);
+      const cancelBtn = wrapper.find('.rec-cancel');
       expect(cancelBtn.exists()).toBe(true);
       await cancelBtn.trigger('click');
       expect(wrapper.emitted('cancel-voice')).toBeTruthy();

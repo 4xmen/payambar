@@ -302,3 +302,35 @@ describe('PayambarFuncs', () => {
     });
   });
 });
+
+import { linkifyText, isEmojiOnly, updateMessageStatus } from '../src/services/funcs';
+
+describe('linkifyText', () => {
+  it('extracts http(s) links and strips trailing punctuation', () => {
+    expect(linkifyText('see https://a.com/x, ok')).toEqual([
+      { text: 'see ' },
+      { text: 'https://a.com/x', href: 'https://a.com/x' },
+      { text: ', ok' },
+    ]);
+  });
+  it('never links javascript: URLs', () => {
+    expect(linkifyText('javascript:alert(1)').every((s) => !s.href)).toBe(true);
+  });
+});
+
+describe('isEmojiOnly', () => {
+  it('detects emoji-only messages', () => {
+    expect(isEmojiOnly('😀👍')).toBe(true);
+    expect(isEmojiOnly('hi 😀')).toBe(false);
+    expect(isEmojiOnly('')).toBe(false);
+  });
+});
+
+describe('updateMessageStatus monotonic', () => {
+  it('does not downgrade read to delivered', () => {
+    const msgs: any = { 1: [{ id: 5, status: 'read' }] };
+    updateMessageStatus(msgs, 5, 'delivered');
+    expect(msgs[1][0].status).toBe('read');
+    updateMessageStatus({ 1: [{ id: 6, status: 'sent' }] } as any, 6, 'delivered');
+  });
+});
