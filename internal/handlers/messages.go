@@ -45,6 +45,11 @@ type MessageBroadcaster interface {
 	BroadcastMessage(messageID, senderID, receiverID int, content, status, fileName, fileURL, fileType string)
 }
 
+// StatusBroadcaster broadcasts message status changes via WebSocket
+type StatusBroadcaster interface {
+	BroadcastStatusUpdate(messageID, senderID, receiverID int, status string)
+}
+
 // PushNotifier sends push notifications to offline users
 type PushNotifier interface {
 	SendNewMessageNotification(receiverID int, senderUsername string)
@@ -55,6 +60,7 @@ type MessageHandler struct {
 	db             *sql.DB
 	onlineChecker  OnlineChecker
 	broadcaster    MessageBroadcaster
+	statusBC       StatusBroadcaster
 	pushNotifier   PushNotifier
 	uploadDir      string
 	maxUploadSize  int64
@@ -101,6 +107,10 @@ func NewMessageHandler(db *sql.DB, onlineChecker OnlineChecker, uploadDir string
 	if b, ok := onlineChecker.(MessageBroadcaster); ok {
 		broadcaster = b
 	}
+	var statusBC StatusBroadcaster
+	if b, ok := onlineChecker.(StatusBroadcaster); ok {
+		statusBC = b
+	}
 	var vapidKey string
 	if pushNotifier != nil {
 		vapidKey = pushNotifier.VAPIDPublicKey()
@@ -109,6 +119,7 @@ func NewMessageHandler(db *sql.DB, onlineChecker OnlineChecker, uploadDir string
 		db:             db,
 		onlineChecker:  onlineChecker,
 		broadcaster:    broadcaster,
+		statusBC:       statusBC,
 		pushNotifier:   pushNotifier,
 		uploadDir:      uploadDir,
 		maxUploadSize:  maxUploadSize,
@@ -607,15 +618,20 @@ func (h *MessageHandler) MarkAsDelivered(c *gin.Context) {
 		return
 	}
 
-	_, err = h.db.ExecContext(ctx, `
+	var senderID int
+	err = h.db.QueryRowContext(ctx, `
 		UPDATE messages 
 		SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND status = 'sent'
-	`, messageID)
+		RETURNING sender_id
+	`, messageID).Scan(&senderID)
 
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to update message")})
 		return
+	}
+	if err == nil && h.statusBC != nil {
+		h.statusBC.BroadcastStatusUpdate(messageID, senderID, currentUserID, "delivered")
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "delivered"})
@@ -647,18 +663,70 @@ func (h *MessageHandler) MarkAsRead(c *gin.Context) {
 		return
 	}
 
-	_, err = h.db.ExecContext(ctx, `
+	var senderID int
+	err = h.db.QueryRowContext(ctx, `
 		UPDATE messages 
-		SET status = 'read', read_at = CURRENT_TIMESTAMP
-		WHERE id = ? AND receiver_id = ?
-	`, messageID, currentUserID)
+		SET status = 'read', read_at = CURRENT_TIMESTAMP,
+		    delivered_at = COALESCE(delivered_at, CURRENT_TIMESTAMP)
+		WHERE id = ? AND receiver_id = ? AND status != 'read'
+		RETURNING sender_id
+	`, messageID, currentUserID).Scan(&senderID)
 
+	if err != nil && err != sql.ErrNoRows {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to update message")})
+		return
+	}
+	if err == nil && h.statusBC != nil {
+		h.statusBC.BroadcastStatusUpdate(messageID, senderID, currentUserID, "read")
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "read"})
+}
+
+// MarkConversationAsRead marks every unread message from the given user as read
+func (h *MessageHandler) MarkConversationAsRead(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": __("unauthorized")})
+		return
+	}
+
+	peerID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || peerID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": __("invalid user id")})
+		return
+	}
+
+	currentUserID := userID.(int)
+	rows, err := h.db.QueryContext(c.Request.Context(), `
+		UPDATE messages
+		SET status = 'read', read_at = CURRENT_TIMESTAMP,
+		    delivered_at = COALESCE(delivered_at, CURRENT_TIMESTAMP)
+		WHERE sender_id = ? AND receiver_id = ? AND (read_at IS NULL OR status != 'read')
+		RETURNING id
+	`, peerID, currentUserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": __("failed to update message")})
 		return
 	}
+	defer rows.Close()
 
-	c.JSON(http.StatusOK, gin.H{"status": "read"})
+	ids := make([]int, 0, 16)
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+
+	if h.statusBC != nil {
+		for _, id := range ids {
+			h.statusBC.BroadcastStatusUpdate(id, peerID, currentUserID, "read")
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "read", "count": len(ids)})
 }
 
 // DeleteMessage deletes a message (only sender can delete)

@@ -225,7 +225,10 @@ export function useAppWebSocket(options?: AppWebSocketOptions) {
         convs.setConversationOnlineStatus(convUser, true);
         if (Number(convs.currentConversationId.value) === convUser) {
           sendWsJson({ type: 'mark_delivered', message_id: data.message_id });
-          sendWsJson({ type: 'mark_read', message_id: data.message_id });
+          // Only count it as read if the user can actually see it.
+          if (typeof document === 'undefined' || !document.hidden) {
+            sendWsJson({ type: 'mark_read', message_id: data.message_id });
+          }
           nextTick(() => {
             options?.onIncomingMessageScroll?.();
           });

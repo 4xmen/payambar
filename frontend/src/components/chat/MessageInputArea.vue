@@ -4,7 +4,7 @@ import { formatRecordingDuration } from '../../services/funcs';
 
 const messageText = defineModel<string>('messageText', { default: '' });
 
-defineProps<{
+const props = defineProps<{
   show: boolean;
   recordingVoice: boolean;
   recordingElapsedSec: number;
@@ -31,6 +31,11 @@ function resizeTextarea() {
 }
 
 function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && props.recordingVoice) {
+    event.preventDefault();
+    emit('cancel-voice');
+    return;
+  }
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     emit('send');
@@ -154,6 +159,9 @@ defineExpose({
         v-model="messageText"
         @input="resizeTextarea"
         @keydown="onKeydown"
+        enterkeyhint="send"
+        dir="auto"
+        aria-label="متن پیام"
         @paste="onPaste"
         placeholder="پیام..."
       ></textarea>
@@ -192,7 +200,7 @@ defineExpose({
         <span>لغو</span>
       </button>
     </div>
-    <div v-if="sendingVoice" class="upload-progress">در حال ارسال پیام صوتی...</div>
-    <div v-if="uploadingFile" class="upload-progress">در حال آپلود...</div>
+    <div v-if="sendingVoice" class="upload-progress" role="status">در حال ارسال پیام صوتی...</div>
+    <div v-if="uploadingFile" class="upload-progress" role="status">در حال آپلود...</div>
   </div>
 </template>

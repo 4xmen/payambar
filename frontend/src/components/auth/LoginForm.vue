@@ -28,6 +28,10 @@ async function onSubmit() {
         placeholder="نام‌کاربری"
         required
         autocomplete="username"
+        autocapitalize="none"
+        autocorrect="off"
+        spellcheck="false"
+        autofocus
       />
     </div>
 
@@ -85,8 +89,8 @@ async function onSubmit() {
       </div>
     </div>
 
-    <div class="error-message" v-if="authError">{{ authError }}</div>
-    <button type="submit" :disabled="isAuthLoading">
+    <div class="error-message" role="alert" v-if="authError">{{ authError }}</div>
+    <button type="submit" :disabled="isAuthLoading" :aria-busy="isAuthLoading">
       <span v-if="isAuthLoading" class="btn-spinner"></span>
       <span>{{ isAuthLoading ? 'در حال ورود...' : 'ورود امن' }}</span>
     </button>

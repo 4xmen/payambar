@@ -17,7 +17,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="active-call-bar" @click="emit('return-to-chat')">
+  <div class="active-call-bar" role="status" @click="emit('return-to-chat')">
     <div class="active-call-info">
       <span class="pulse-icon">●</span>
       <span class="active-call-title">

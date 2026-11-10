@@ -12,6 +12,8 @@ const pushNotificationsEnabled = ref<boolean>(
   typeof localStorage !== 'undefined' && localStorage.getItem('pushNotificationsEnabled') === 'true'
 );
 
+const pushSupported = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
+
 async function togglePushNotifications() {
   if (!token.value) return;
   if (pushNotificationsEnabled.value) {
@@ -40,10 +42,15 @@ async function togglePushNotifications() {
 <template>
   <div class="profile-section">
     <div class="profile-form-group push-toggle-group">
-      <label>اعلان پیام جدید</label>
+      <div class="push-toggle-text">
+        <label for="push-toggle">اعلان پیام جدید</label>
+        <p class="field-hint">{{ pushSupported ? 'با رسیدن پیام جدید، حتی وقتی برنامه بسته است، اعلان دریافت کنید.' : 'مرورگر شما از اعلان‌ها پشتیبانی نمی‌کند.' }}</p>
+      </div>
       <label class="toggle-switch">
         <input
+          id="push-toggle"
           type="checkbox"
+          :disabled="!pushSupported"
           v-model="pushNotificationsEnabled"
           @change="togglePushNotifications"
         />

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { Message } from '../../types';
 import {
-  formatDate,
   formatTime,
   isAudioMessage,
   isImageMessage,
@@ -15,6 +14,8 @@ defineProps<{
   allMessages: Message[];
   myUserId: number | null;
   isLive?: boolean;
+  groupedWithPrev?: boolean;
+  groupedWithNext?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -28,7 +29,11 @@ const emit = defineEmits<{
     class="message"
     :class="[
       Number(message.sender_id) === Number(myUserId) ? 'sent' : 'received',
-      { 'message-live-enter': isLive },
+      {
+        'message-live-enter': isLive,
+        'group-prev': groupedWithPrev,
+        'group-next': groupedWithNext,
+      },
     ]"
   >
     <div class="message-bubble" :class="{ 'media-bubble': message.file_url }">
@@ -88,8 +93,10 @@ const emit = defineEmits<{
         <span
           v-if="shouldShowMessageStatus(message, index, allMessages, myUserId)"
           class="message-status"
+          :class="'status-' + message.status"
+          :title="message.status === 'read' ? 'خوانده شد' : message.status === 'delivered' ? 'تحویل داده شد' : 'ارسال شد'"
         >
-          <svg v-if="message.status === 'read'" class="icon-svg" viewBox="0 0 24 24">
+          <svg v-if="message.status === 'read' || message.status === 'delivered'" class="icon-svg" viewBox="0 0 24 24">
             <path d="M18 6 7 17l-5-5" />
             <path d="m22 10-7.5 7.5L13 16" />
           </svg>
@@ -98,9 +105,6 @@ const emit = defineEmits<{
           </svg>
         </span>
         <span class="message-time">{{ formatTime(message.created_at) }}</span>
-        <span class="message-date" v-if="formatDate(message.created_at)">
-          &nbsp;{{ formatDate(message.created_at) }}
-        </span>
       </div>
 
       <button

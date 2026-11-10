@@ -22,7 +22,8 @@ const searchLoading = ref<boolean>(false);
 const searchError = ref<string>('');
 let searchTimeout: any = null;
 
-const DEBOUNCE_MS = 500;
+const DEBOUNCE_MS = 350;
+const MIN_QUERY = 3;
 const isClosing = ref(false);
 
 onMounted(() => {
@@ -185,6 +186,7 @@ function selectSearchedUser(user: SearchUser) {
             class="search-user-input"
             v-model="searchQuery"
             @input="onInput"
+            aria-label="جستجوی کاربر"
             placeholder="نام کاربری را جستجو کنید..."
             autocomplete="off"
             spellcheck="false"
@@ -194,17 +196,21 @@ function selectSearchedUser(user: SearchUser) {
       </div>
 
       <ul class="users-list" role="list">
-        <li v-if="!searchQuery.trim()" class="search-hint">
-          <span>حداقل ۳ حرف برای جستجو وارد کنید</span>
+        <li v-if="searchQuery.trim().length < MIN_QUERY" class="search-hint">
+          <span class="hint-icon" aria-hidden="true">🔍</span>
+          <span>{{ searchQuery.trim() ? 'چند حرف دیگر وارد کنید' : 'حداقل ۳ حرف از نام کاربری را وارد کنید' }}</span>
         </li>
-        <li v-else-if="searchLoading" class="searching">
+        <li v-else-if="searchLoading" class="searching" role="status">
+          <span class="inline-spinner" aria-hidden="true"></span>
           <span>در حال جستجو...</span>
         </li>
-        <li v-else-if="searchError" class="empty">
+        <li v-else-if="searchError" class="empty" role="alert">
           <span>{{ searchError }}</span>
+          <button type="button" class="btn-secondary retry-btn" @click="executeSearch(searchQuery.trim())">تلاش مجدد</button>
         </li>
         <li v-else-if="searchResults.length === 0" class="empty">
-          <span>کاربری یافت نشد</span>
+          <span class="hint-icon" aria-hidden="true">🕵️</span>
+          <span>کاربری با این نام یافت نشد</span>
         </li>
         <li
           v-else

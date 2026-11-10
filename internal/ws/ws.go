@@ -209,6 +209,51 @@ func (h *Hub) BroadcastMessage(messageID, senderID, receiverID int, content, sta
 	h.broadcast <- msg
 }
 
+// BroadcastStatusUpdate notifies participants that a message changed status.
+func (h *Hub) BroadcastStatusUpdate(messageID, senderID, receiverID int, status string) {
+	h.broadcast <- &MessageEvent{
+		Type:       "status_update",
+		MessageID:  messageID,
+		Status:     status,
+		SenderID:   senderID,
+		ReceiverID: receiverID,
+	}
+}
+
+// markPendingDelivered flips 'sent' messages addressed to userID to 'delivered'
+// (called when the user connects) and notifies the senders.
+func (h *Hub) markPendingDelivered(userID int) {
+	if h.db == nil {
+		return
+	}
+	rows, err := h.db.Query(`
+		UPDATE messages
+		SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
+		WHERE receiver_id = ? AND status = 'sent'
+		RETURNING id, sender_id
+	`, userID)
+	if err != nil {
+		log.Printf("markPendingDelivered: %v", err)
+		return
+	}
+	type pair struct{ id, sender int }
+	var updated []pair
+	for rows.Next() {
+		var p pair
+		if err := rows.Scan(&p.id, &p.sender); err == nil {
+			updated = append(updated, p)
+		}
+	}
+	rows.Close()
+	for _, p := range updated {
+		select {
+		case h.broadcast <- &MessageEvent{Type: "status_update", MessageID: p.id, Status: "delivered", SenderID: p.sender, ReceiverID: userID}:
+		case <-h.stop:
+			return
+		}
+	}
+}
+
 func (h *Hub) Run() {
 	for {
 		select {
@@ -233,6 +278,8 @@ func (h *Hub) Run() {
 			totalClients := len(h.clients)
 			h.mu.Unlock()
 			log.Printf("User %d connected (total: %d)", client.userID, totalClients)
+			// Messages sent while this user was offline are now deliverable.
+			go h.markPendingDelivered(client.userID)
 			if pendingOffer != nil {
 				select {
 				case client.send <- pendingOffer:
@@ -557,7 +604,8 @@ func (c *Client) handleMarkRead(rawEvent interface{}) {
 	var senderID int
 	err := c.hub.db.QueryRow(`
 		UPDATE messages 
-		SET status = 'read', read_at = CURRENT_TIMESTAMP
+		SET status = 'read', read_at = CURRENT_TIMESTAMP,
+		    delivered_at = COALESCE(delivered_at, CURRENT_TIMESTAMP)
 		WHERE id = ? AND receiver_id = ? AND status != 'read'
 		RETURNING sender_id
 	`, event.MessageID, c.userID).Scan(&senderID)

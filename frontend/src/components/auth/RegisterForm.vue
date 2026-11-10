@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useAuth } from '../../composables/useAuth';
 
 const { registerForm, acceptRules, authError, isAuthLoading, handleRegister } = useAuth();
 const showPassword = ref<boolean>(false);
 const showConfirm = ref<boolean>(false);
+
+const passwordMismatch = computed(
+  () => !!registerForm.confirm && registerForm.confirm !== registerForm.password
+);
 
 const emit = defineEmits<{
   (e: 'success'): void;
@@ -29,6 +33,10 @@ async function onSubmit() {
         placeholder="نام‌کاربری"
         required
         autocomplete="username"
+        autocapitalize="none"
+        autocorrect="off"
+        spellcheck="false"
+        autofocus
       />
     </div>
 
@@ -96,6 +104,8 @@ async function onSubmit() {
           placeholder="تکرار رمز‌عبور"
           required
           autocomplete="new-password"
+          :aria-invalid="passwordMismatch"
+          aria-describedby="reg-confirm-hint"
         />
         <button
           type="button"
@@ -140,12 +150,14 @@ async function onSubmit() {
       </div>
     </div>
 
+    <p id="reg-confirm-hint" class="field-error" role="alert" v-if="passwordMismatch">رمز عبور و تکرار آن یکسان نیست</p>
+
     <label class="rules-checkbox">
       <input type="checkbox" v-model="acceptRules" required />
       <span>قوانین استفاده را می‌پذیرم</span>
     </label>
-    <div class="error-message" v-if="authError">{{ authError }}</div>
-    <button type="submit" :disabled="isAuthLoading">
+    <div class="error-message" role="alert" v-if="authError">{{ authError }}</div>
+    <button type="submit" :disabled="isAuthLoading" :aria-busy="isAuthLoading">
       <span v-if="isAuthLoading" class="btn-spinner"></span>
       <span>{{ isAuthLoading ? 'در حال ثبت‌نام...' : 'ثبت‌نام' }}</span>
     </button>

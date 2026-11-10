@@ -19,6 +19,7 @@ var translations = map[string]string{
 	"failed to scan message":                       "خطا در پردازش پیام",
 	"failed to fetch conversations":                "خطا در دریافت مکالمه ها",
 	"failed to fetch conversation":                 "خطا در دریافت مکالمه",
+	"invalid user id":                              "شناسه کاربر نامعتبر است",
 	"invalid message id":                           "شناسه پیام نامعتبر است",
 	"cannot mark this message":                     "امکان تغییر وضعیت این پیام وجود ندارد",
 	"failed to update message":                     "خطا در به روزرسانی پیام",

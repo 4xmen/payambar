@@ -151,6 +151,7 @@ func RunServer(cfg *config.Config) error {
 		protected.DELETE("/conversations/:id", msgHandler.DeleteConversation)
 		protected.PUT("/messages/:id/delivered", msgHandler.MarkAsDelivered)
 		protected.PUT("/messages/:id/read", msgHandler.MarkAsRead)
+		protected.PUT("/users/:id/read", msgHandler.MarkConversationAsRead)
 		protected.DELETE("/messages/:id", msgHandler.DeleteMessage)
 		protected.POST("/upload", msgHandler.UploadFile)
 

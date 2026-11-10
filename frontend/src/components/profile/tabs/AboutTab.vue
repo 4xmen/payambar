@@ -11,5 +11,6 @@ defineProps<{
     </div>
     <div class="about-title">PayamBar</div>
     <div class="about-version">نسخه {{ appVersion || 'dev' }}</div>
+    <p class="about-desc">پیام‌رسانی ساده، سریع و امن با رمزنگاری سرتاسری پیام‌های متنی.</p>
   </div>
 </template>

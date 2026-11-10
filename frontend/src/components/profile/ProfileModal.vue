@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue';
+import { ref, watch, onMounted, nextTick } from 'vue';
 import ProfileTab from './tabs/ProfileTab.vue';
 import AppearanceTab from './tabs/AppearanceTab.vue';
 import NotificationsTab from './tabs/NotificationsTab.vue';
@@ -79,6 +79,18 @@ function closeModal() {
   }
 }
 
+const tabOrder = ['profile', 'appearance', 'notifications', 'account', 'about'] as const;
+
+function onTabKeydown(e: KeyboardEvent) {
+  const dir = e.key === 'ArrowRight' ? -1 : e.key === 'ArrowLeft' ? 1 : 0; // RTL
+  if (!dir && e.key !== 'Home' && e.key !== 'End') return;
+  e.preventDefault();
+  const i = tabOrder.indexOf(activeTab.value);
+  const next = e.key === 'Home' ? 0 : e.key === 'End' ? tabOrder.length - 1 : (i + dir + tabOrder.length) % tabOrder.length;
+  activeTab.value = tabOrder[next];
+  nextTick(() => document.getElementById('profile-tab-' + tabOrder[next])?.focus());
+}
+
 function handleNativeClose() {
   emit('close');
 }
@@ -114,10 +126,12 @@ function handleBackdropClick(e: MouseEvent) {
         </form>
       </header>
 
-      <nav class="profile-tabs" role="tablist" aria-label="تنظیمات">
+      <nav class="profile-tabs" role="tablist" aria-label="تنظیمات" @keydown="onTabKeydown">
         <button
           type="button"
           role="tab"
+          id="profile-tab-profile"
+          :tabindex="activeTab === 'profile' ? 0 : -1"
           :aria-selected="activeTab === 'profile'"
           :class="{ active: activeTab === 'profile' }"
           @click="activeTab = 'profile'"
@@ -127,6 +141,8 @@ function handleBackdropClick(e: MouseEvent) {
         <button
           type="button"
           role="tab"
+          id="profile-tab-appearance"
+          :tabindex="activeTab === 'appearance' ? 0 : -1"
           :aria-selected="activeTab === 'appearance'"
           :class="{ active: activeTab === 'appearance' }"
           @click="activeTab = 'appearance'"
@@ -136,6 +152,8 @@ function handleBackdropClick(e: MouseEvent) {
         <button
           type="button"
           role="tab"
+          id="profile-tab-notifications"
+          :tabindex="activeTab === 'notifications' ? 0 : -1"
           :aria-selected="activeTab === 'notifications'"
           :class="{ active: activeTab === 'notifications' }"
           @click="activeTab = 'notifications'"
@@ -145,6 +163,8 @@ function handleBackdropClick(e: MouseEvent) {
         <button
           type="button"
           role="tab"
+          id="profile-tab-account"
+          :tabindex="activeTab === 'account' ? 0 : -1"
           :aria-selected="activeTab === 'account'"
           :class="{ active: activeTab === 'account' }"
           @click="activeTab = 'account'"
@@ -154,6 +174,8 @@ function handleBackdropClick(e: MouseEvent) {
         <button
           type="button"
           role="tab"
+          id="profile-tab-about"
+          :tabindex="activeTab === 'about' ? 0 : -1"
           :aria-selected="activeTab === 'about'"
           :class="{ active: activeTab === 'about' }"
           @click="activeTab = 'about'"
@@ -162,7 +184,7 @@ function handleBackdropClick(e: MouseEvent) {
         </button>
       </nav>
 
-      <main class="profile-modal-content">
+      <main class="profile-modal-content" role="tabpanel" :aria-labelledby="'profile-tab-' + activeTab">
         <ProfileTab
           v-if="activeTab === 'profile'"
           ref="profileTabRef"

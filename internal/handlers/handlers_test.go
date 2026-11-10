@@ -175,6 +175,7 @@ func setupTestRouter() *gin.Engine {
 		protected.DELETE("/conversations/:id", msgHandler.DeleteConversation)
 		protected.PUT("/messages/:id/delivered", msgHandler.MarkAsDelivered)
 		protected.PUT("/messages/:id/read", msgHandler.MarkAsRead)
+		protected.PUT("/users/:id/read", msgHandler.MarkConversationAsRead)
 		protected.POST("/upload", msgHandler.UploadFile)
 		protected.POST("/profile/avatar", msgHandler.UploadAvatar)
 		protected.DELETE("/profile", msgHandler.DeleteAccount)
@@ -528,6 +529,25 @@ func TestMessages(t *testing.T) {
 
 		if w.Code != http.StatusOK {
 			t.Errorf("MarkAsDelivered() status = %d, want 200", w.Code)
+		}
+	})
+
+	t.Run("mark conversation as read", func(t *testing.T) {
+		if _, err := testDB.Exec("UPDATE messages SET status = 'sent', read_at = NULL WHERE id = ?", msgID); err != nil {
+			t.Fatalf("reset: %v", err)
+		}
+		req := httptest.NewRequest("PUT", "/api/users/"+strconv.Itoa(user1ID)+"/read", nil)
+		req.Header.Set("Authorization", "Bearer "+token2)
+		w := httptest.NewRecorder()
+		testRouter.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("MarkConversationAsRead() status = %d, want 200", w.Code)
+		}
+		var status string
+		var readAt sql.NullString
+		testDB.QueryRow("SELECT status, read_at FROM messages WHERE id = ?", msgID).Scan(&status, &readAt)
+		if status != "read" || !readAt.Valid {
+			t.Errorf("message not marked read: status=%q read_at=%v", status, readAt)
 		}
 	})
 

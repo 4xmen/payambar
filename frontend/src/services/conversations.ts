@@ -47,6 +47,19 @@ export async function deleteConversation(
   });
 }
 
+export async function markConversationRead(
+  apiUrl: string,
+  token: string,
+  peerUserId: number,
+  fetchFn?: typeof fetch
+): Promise<Response> {
+  const doFetch = fetchFn || fetch;
+  return doFetch(`${apiUrl}/users/${peerUserId}/read`, {
+    method: 'PUT',
+    headers: authHeaders(token),
+  });
+}
+
 export function findByUserId(
   conversations: Conversation[],
   userId: number

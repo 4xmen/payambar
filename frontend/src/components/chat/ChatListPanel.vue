@@ -31,6 +31,7 @@ const emit = defineEmits<{
   (e: 'open-profile'): void;
   (e: 'select-conversation', conv: Conversation): void;
   (e: 'open-conversation-menu', event: MouseEvent, conv: Conversation): void;
+  (e: 'mark-read-conversation', conv: Conversation): void;
   (e: 'delete-conversation', conv: Conversation): void;
   (e: 'close-conversation-menu'): void;
   (e: 'open-new-chat'): void;
@@ -142,6 +143,7 @@ const emit = defineEmits<{
       :x="conversationMenu.x"
       :y="conversationMenu.y"
       :conversation="conversationMenu.conversation"
+      @mark-read="emit('mark-read-conversation', $event)"
       @delete="emit('delete-conversation', $event)"
       @close="emit('close-conversation-menu')"
     />

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue';
 import type { IncomingCall } from '../../types';
 
 defineProps<{
@@ -9,11 +10,17 @@ const emit = defineEmits<{
   (e: 'accept'): void;
   (e: 'reject'): void;
 }>();
+
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') emit('reject');
+}
+onMounted(() => window.addEventListener('keydown', onKey));
+onUnmounted(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
   <div class="modal">
-    <div class="modal-content incoming-call-modal">
+    <div class="modal-content incoming-call-modal" role="alertdialog" aria-live="assertive" aria-label="تماس ورودی">
       <div class="call-avatar-wrapper">
         <div class="call-avatar-pulse pulse-incoming"></div>
         <div class="call-avatar">
@@ -34,7 +41,7 @@ const emit = defineEmits<{
         </p>
       </div>
       <div class="call-actions">
-        <button type="button" class="btn-accept" @click="emit('accept')">
+        <button type="button" class="btn-accept" autofocus @click="emit('accept')">
           <span>
             <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path

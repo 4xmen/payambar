@@ -8,6 +8,7 @@ import {
   deleteConversation as deleteConversationApi,
   fetchConversations,
   findByUserId,
+  markConversationRead as markConversationReadApi,
   updateLastMessageAt as updateLastMessageAtHelper,
 } from '../services/conversations';
 import { fetchMessages } from '../services/messages';
@@ -261,6 +262,13 @@ function reconcileConversations(
     return true;
   }
 
+  async function markConversationRead(token: string, conv: Conversation): Promise<boolean> {
+    const res = await markConversationReadApi(API_URL, token, conv.user_id);
+    if (!res.ok) throw new Error('Failed to mark conversation as read');
+    clearUnreadCount(conversations.value, conv.user_id);
+    return true;
+  }
+
   function openConversationMenu(event: MouseEvent, conv: Conversation) {
     const targetRect = (event.currentTarget as HTMLElement)?.getBoundingClientRect();
     const padding = 12;
@@ -313,6 +321,7 @@ function reconcileConversations(
     goBackToList,
     startNewConversation,
     deleteSelectedConversation,
+    markConversationRead,
     openConversationMenu,
     closeConversationMenu,
     setConversationOnlineStatus,

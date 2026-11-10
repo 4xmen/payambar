@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Conversation, Message, SearchUser } from './types';
 import { API_URL, setUnauthorizedHandler } from './services/api';
 import { unreadIncomingIds } from './services/messages';
-import { findByUserId } from './services/conversations';
+import { findByUserId, markConversationRead } from './services/conversations';
 
 import { useAuth } from './composables/useAuth';
 import { useConversations } from './composables/useConversations';
@@ -145,11 +145,7 @@ async function onSelectConversation(conv: Conversation) {
     convs.updateConversationLastMessage(conv.user_id, latest.created_at, messages);
   }
 
-  if (wsConnected.value) {
-    for (const msgId of unreadIncomingIds(loaded, userId.value || 0)) {
-      ws.sendWsJson({ type: 'mark_read', message_id: msgId });
-    }
-  }
+  markVisibleConversationRead(conv.user_id, loaded);
 
   nextTick(() => {
     setTimeout(() => {
@@ -389,6 +385,34 @@ async function onDeleteMessage(msg: Message) {
     toast.showToast('پیام حذف شد', 'success');
   } catch {
     toast.showToast('خطا در حذف پیام', 'error');
+  }
+}
+
+function markVisibleConversationRead(convUserId: number, list?: Message[]) {
+  if (typeof document !== 'undefined' && document.hidden) return;
+  const ids = unreadIncomingIds(list || messages[convUserId] || [], userId.value || 0);
+  if (!ids.length) return;
+  if (wsConnected.value) {
+    for (const msgId of ids) ws.sendWsJson({ type: 'mark_read', message_id: msgId });
+  } else if (token.value) {
+    // WebSocket down: fall back to HTTP so the sender still sees "read".
+    markConversationRead(API_URL, token.value, convUserId).catch(() => {});
+  }
+}
+
+function onVisibilityChange() {
+  if (document.hidden || currentConversationId.value == null) return;
+  markVisibleConversationRead(Number(currentConversationId.value));
+}
+
+async function onMarkConversationRead(conv: Conversation) {
+  convs.closeConversationMenu();
+  if (!conv || !token.value) return;
+  try {
+    await convs.markConversationRead(token.value, conv);
+    toast.showToast('همه پیام‌ها خوانده‌شده شد', 'success');
+  } catch {
+    toast.showToast('خطا در بروزرسانی وضعیت پیام‌ها', 'error');
   }
 }
 
@@ -716,6 +740,7 @@ onMounted(async () => {
   setUnauthorizedHandler(onLogout);
   window.addEventListener('click', onGlobalClick);
   window.addEventListener('popstate', handlePopState);
+  document.addEventListener('visibilitychange', onVisibilityChange);
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
   }
@@ -732,6 +757,7 @@ onBeforeUnmount(() => {
   setUnauthorizedHandler(null);
   window.removeEventListener('click', onGlobalClick);
   window.removeEventListener('popstate', handlePopState);
+  document.removeEventListener('visibilitychange', onVisibilityChange);
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage);
   }
@@ -785,6 +811,7 @@ onBeforeUnmount(() => {
           @open-profile="openProfileModal"
           @select-conversation="onSelectConversation"
           @open-conversation-menu="(ev, c) => convs.openConversationMenu(ev, c)"
+          @mark-read-conversation="onMarkConversationRead"
           @delete-conversation="onDeleteConversation"
           @close-conversation-menu="convs.closeConversationMenu"
           @open-new-chat="openNewChatModal"

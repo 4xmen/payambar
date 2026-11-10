@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue';
 import type { OutgoingCall } from '../../types';
 
 defineProps<{
@@ -8,11 +9,17 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'cancel'): void;
 }>();
+
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') emit('cancel');
+}
+onMounted(() => window.addEventListener('keydown', onKey));
+onUnmounted(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
   <div class="modal">
-    <div class="modal-content incoming-call-modal">
+    <div class="modal-content incoming-call-modal" role="alertdialog" aria-live="polite" aria-label="تماس خروجی">
       <div class="call-avatar-wrapper">
         <div class="call-avatar-pulse" :class="{ 'pulse-active': outgoingCall.status === 'ringing' }"></div>
         <div class="call-avatar">

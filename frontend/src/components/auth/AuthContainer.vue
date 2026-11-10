@@ -34,10 +34,12 @@ function onAuthSuccess() {
           <p class="auth-subtitle">پیام‌رسان ساده، سریع و رمزنگاری‌شده</p>
         </div>
       </div>
-      <div class="auth-tabs">
+      <div class="auth-tabs" role="tablist" aria-label="ورود یا ثبت‌نام">
         <button
           type="button"
           class="tab-btn"
+          role="tab"
+          :aria-selected="authTab === 'login'"
           :class="{ active: authTab === 'login' }"
           @click="authTab = 'login'"
         >
@@ -46,6 +48,8 @@ function onAuthSuccess() {
         <button
           type="button"
           class="tab-btn"
+          role="tab"
+          :aria-selected="authTab === 'register'"
           :class="{ active: authTab === 'register' }"
           @click="authTab = 'register'"
         >

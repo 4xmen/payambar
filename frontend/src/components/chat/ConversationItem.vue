@@ -20,7 +20,9 @@ const emit = defineEmits<{
     :class="{ active: isActive }"
     role="button"
     tabindex="0"
+    :aria-current="isActive ? 'true' : undefined"
     @click="emit('select', conversation)"
+    @contextmenu.prevent="emit('open-menu', $event, conversation)"
     @keydown.enter.self.prevent="emit('select', conversation)"
     @keydown.space.self.prevent="emit('select', conversation)"
   >
@@ -32,7 +34,7 @@ const emit = defineEmits<{
         class="avatar-img"
       />
       <span v-else>{{ (conversation.username || '?').charAt(0).toUpperCase() }}</span>
-      <span v-if="conversation.is_online" class="online-indicator"></span>
+      <span v-if="conversation.is_online" class="online-indicator" role="img" aria-label="آنلاین"></span>
     </div>
 
     <div class="conversation-info">
@@ -46,8 +48,12 @@ const emit = defineEmits<{
 
     <div class="conversation-actions">
       <div class="conversation-time">{{ formatTime(conversation.last_message_at) }}</div>
-      <div v-if="conversation.unread_count && conversation.unread_count > 0" class="unread-badge">
-        {{ conversation.unread_count }}
+      <div
+        v-if="conversation.unread_count && conversation.unread_count > 0"
+        class="unread-badge"
+        :aria-label="conversation.unread_count + ' پیام خوانده‌نشده'"
+      >
+        {{ conversation.unread_count > 99 ? '99+' : conversation.unread_count }}
       </div>
       <button
         type="button"

@@ -53,7 +53,7 @@ const emit = defineEmits<{
           <span class="chat-header-name">
             {{ conversation.display_name || conversation.username }}
           </span>
-          <span class="chat-header-status" v-if="conversation.is_online">آنلاین</span>
+          <span class="chat-header-status" role="status" v-if="conversation.is_online">آنلاین</span>
         </div>
       </template>
     </div>
@@ -65,6 +65,7 @@ const emit = defineEmits<{
         v-if="currentConversationId"
         @click="emit('call')"
         aria-label="تماس صوتی"
+        title="تماس صوتی"
       >
         <svg class="icon-svg" viewBox="0 0 24 24">
           <path

@@ -47,10 +47,26 @@ export function updateMessageStatus(
   const allMsgs = Object.values(messages).flat();
   const msg = allMsgs.find((m) => Number(m.id) === Number(messageId));
   if (msg) {
-    msg.status = newStatus;
+    // Statuses only move forward: a late 'delivered' must not undo 'read'.
+    if (statusRank(newStatus) >= statusRank(msg.status)) {
+      msg.status = newStatus;
+    }
     return true;
   }
   return false;
+}
+
+function statusRank(status: string | null | undefined): number {
+  switch (status) {
+    case 'read':
+      return 3;
+    case 'delivered':
+      return 2;
+    case 'sent':
+      return 1;
+    default:
+      return 0;
+  }
 }
 
 export function addMessageToConversation(
@@ -83,6 +99,35 @@ export function replaceMessageByClientId(
     return true;
   }
   return false;
+}
+
+function startOfDay(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/** Stable per-day key (local time) used to group messages by day. */
+export function dayKey(value: string | null | undefined): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  return String(startOfDay(d));
+}
+
+/** Day separator label: امروز / دیروز / full Persian date. */
+export function formatDayLabel(value: string | null | undefined): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000);
+  if (diffDays === 0) return 'امروز';
+  if (diffDays === 1) return 'دیروز';
+  const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  try {
+    return new Intl.DateTimeFormat('fa-IR', opts).format(d);
+  } catch {
+    return d.toLocaleDateString();
+  }
 }
 
 /**

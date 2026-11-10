@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import type { Message, PullToRefreshState } from '../../types';
 import MessageItem from './MessageItem.vue';
+import { dayKey, formatDayLabel } from '../../services/funcs';
 
 const props = defineProps<{
   currentConversationId: number | null;
@@ -101,6 +102,20 @@ watch(
   { deep: false, immediate: true }
 );
 
+function showDaySeparator(index: number): boolean {
+  const cur = dayKey(props.messages[index]?.created_at);
+  if (!cur) return false;
+  return index === 0 || dayKey(props.messages[index - 1]?.created_at) !== cur;
+}
+
+function sameGroup(a: Message | undefined, b: Message | undefined): boolean {
+  if (!a || !b) return false;
+  if (Number(a.sender_id) !== Number(b.sender_id)) return false;
+  const da = dayKey(a.created_at);
+  return da === dayKey(b.created_at) &&
+    Math.abs(new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) < 5 * 60 * 1000;
+}
+
 function handleScroll(event: Event) {
   emit('scroll', event);
   const container = event.target as HTMLElement;
@@ -135,11 +150,13 @@ defineExpose({
       <h3 class="desktop-empty-title">پیام‌رسان پیامبر</h3>
       <p class="desktop-empty-desc">برای شروع چت، یک مکالمه را از فهرست انتخاب کنید یا با دکمه + مکالمه جدید بسازید.</p>
     </div>
-    <div v-else-if="loadingMessages" class="empty-state">
-      در حال بارگذاری...
+    <div v-else-if="loadingMessages" class="messages-skeleton" role="status" aria-label="در حال بارگذاری پیام‌ها">
+      <div v-for="n in 5" :key="n" class="skeleton-bubble" :class="n % 2 ? 'sent' : 'received'" :style="{ width: 30 + ((n * 17) % 35) + '%' }"></div>
     </div>
-    <div v-else-if="messages.length === 0" class="empty-state">
-      هنوز پیامی وجود ندارد
+    <div v-else-if="messages.length === 0" class="empty-state empty-chat">
+      <div class="empty-chat-icon" aria-hidden="true">👋</div>
+      <strong>هنوز پیامی وجود ندارد</strong>
+      <span>اولین پیام را بفرستید و گفتگو را شروع کنید.</span>
     </div>
     <div v-else>
       <div v-if="loadingOlderMessages" class="loading-older">
@@ -152,17 +169,25 @@ defineExpose({
       >
         برای بارگذاری پیام‌های قدیمی‌تر به بالا اسکرول کنید
       </div>
-      <MessageItem
+      <template
         v-for="(msg, index) in messages"
         :key="msg.client_message_id || msg.id || index"
+      >
+      <div v-if="showDaySeparator(index)" class="day-separator" role="separator">
+        <span>{{ formatDayLabel(msg.created_at) }}</span>
+      </div>
+      <MessageItem
         :message="msg"
         :index="index"
         :all-messages="messages"
         :my-user-id="myUserId"
         :is-live="isLiveMessage(msg)"
+        :grouped-with-prev="!showDaySeparator(index) && sameGroup(messages[index - 1], msg)"
+        :grouped-with-next="index + 1 < messages.length && !showDaySeparator(index + 1) && sameGroup(msg, messages[index + 1])"
         @open-menu="(ev, m) => emit('open-message-menu', ev, m)"
         @preview-image="(url) => emit('preview-image', url)"
       />
+      </template>
     </div>
   </div>
 
